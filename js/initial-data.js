@@ -41,6 +41,7 @@ export const initialCodeMaster = [
   { category: 'MAKER', code: 'DRS_CARE', name: 'ドクターズケア' },
   { category: 'MAKER', code: 'HAVEST', name: 'HAVEST(病院専用)' },
   { category: 'MAKER', code: 'INABA', name: 'いなば' },
+  { category: 'MAKER', code: 'AIXIA', name: 'AIXIA' },
   { category: 'MAKER', code: 'UNKNOWN', name: '不明' },
   { category: 'MAKER', code: 'OTHER', name: 'その他' },
 
@@ -125,6 +126,15 @@ export const initialFoodMaster = [
   { code: 'QUESTION_WET90', makerCode: 'UNKNOWN', name: '謎ウェット90', abbr: '謎W90', caloriePer100g: 90, formCode: 'WET', typeCode: 'GENERAL_FOOD' ,defaultAmountG :5},
   { code: 'ENERGY_TULE', makerCode: 'INABA', name: '腎臓エネルギーチュール', abbr: '腎臓エネちゅーる', caloriePer100g: 100 , formCode: 'LIQUID_TREAT', typeCode: 'RENAL_THERAPY',defaultAmountG :14},
   { code: 'AIM_TREATS', makerCode: 'OTHER', name: 'AIMおやつ', abbr: 'AIMおやつ', caloriePer100g: 384 , formCode: 'TREAT', typeCode: 'TREAT',defaultAmountG :5},
+  { code: 'MEDI_MOUSE', makerCode: 'OTHER', name: '腎臓メディムース', abbr: '腎臓メディムース', caloriePer100g: 53 , formCode: 'WET', typeCode: 'RENAL_CARE',defaultAmountG :5},
+  { code: 'ICARE_WATER_TUNA', makerCode: 'AIXIA', name: 'iCare水分補給マグロ', abbr: 'iCare水分補給マグロ', caloriePer100g: 46 , formCode: 'LIQUID', typeCode: 'GENERAL_FOOD',defaultAmountG :35},
+  { code: 'ICARE_WATER_BONITO', makerCode: 'AIXIA', name: 'iCare水分補給カツオ', abbr: 'iCare水分補給カツオ', caloriePer100g: 46 , formCode: 'LIQUID', typeCode: 'GENERAL_FOOD',defaultAmountG :35},
+  { code: 'ICARE_RENAL_TUNA', makerCode: 'AIXIA', name: 'iCare腎マグロ', abbr: 'iCare腎マグロ', caloriePer100g: 51 , formCode: 'LIQUID', typeCode: 'RENAL_CARE',defaultAmountG :35},
+  { code: 'ICARE_RENAL_BONITO', makerCode: 'AIXIA', name: 'iCare腎カツオ', abbr: 'iCare腎カツオ', caloriePer100g: 51 , formCode: 'LIQUID', typeCode: 'RENAL_CARE',defaultAmountG :35},
+  { code: 'AIXIA_RENAL_TUNA', makerCode: 'AIXIA', name: 'AIXIA腎マグロ', abbr: 'AIXIA腎マグロ', caloriePer100g: 98 , formCode: 'WET', typeCode: 'RENAL_CARE',defaultAmountG :35},
+
+  { code: 'KITCAT_GOAT_MILK', makerCode: 'OTHER', name: 'キットキャットゴートミルク', abbr: 'キットキャットゴートミルク', caloriePer100g: 54 , formCode: 'WET', typeCode: 'GENERAL_FOOD',defaultAmountG :5},
+  { code: 'KITCAT_MOUSE', makerCode: 'OTHER', name: 'キットキャットムース', abbr: 'キットキャットムース', caloriePer100g: 101 , formCode: 'WET', typeCode: 'GENERAL_FOOD',defaultAmountG :5},
 
 ];
 
@@ -147,4 +157,5 @@ export const initialRecipeMaster = [
    { code: 'RC_HLS_EARLY_RENAL', name: '早腎KD', components: [{ foodCode: 'HLS_EARLY_RENAL', ratio: 5 }, { foodCode: 'RC_EARLY_RENAL_D', ratio: 5 }], defaultAmountG: 5 ,memo: '' },
    { code: 'DIGESTIVE_SUPPORT_LIQUID', name: '消化器リキッド', components: [{ foodCode: 'DIGESTIVE_SUPPORT_W', ratio: 6 }, { foodCode: 'RENAL_LIQUID', ratio: 4 }], defaultAmountG: 5 ,memo: '' },
    { code: 'SELECT_CHICKEN_LIQUID', name: 'セレプロリキッド', components: [{ foodCode: 'SELECT_CHICKEN_WET', ratio: 6 }, { foodCode: 'RENAL_LIQUID', ratio: 4 }], defaultAmountG: 5 ,memo: '' },
+   { code: 'KITCAT_GUT_HEALTH_SUPPORT', name: 'キットキャット腸健康MIX', components: [{ foodCode: 'KITCAT_MOUSE', ratio: 5 }, { foodCode: 'GUT_HEALTH_SUPPORT', ratio: 5 }], defaultAmountG: 5 ,memo: '' },
 ];

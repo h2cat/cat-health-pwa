@@ -664,18 +664,37 @@ function renderMedicineForm(host, existing, units, effects, onSaved) {
 }
 
 // ===== データ入出力 =====
+const STORE_LABELS = {
+  codeMaster: 'コードマスタ',
+  catMaster: '猫マスタ',
+  foodMaster: '餌マスタ',
+  recipeMaster: 'レシピマスタ',
+  medicineMaster: '薬・サプリマスタ',
+  dailyLog: '日々ログ（体重・尿量など）',
+  feedingLog: '給餌ログ',
+  medicineLog: '投薬ログ',
+  excretionLog: 'うんち・ゲロログ',
+  memoLog: 'メモログ',
+};
+
 async function renderIO(content, callbacks) {
+  const storeChecksHtml = STORES.map(s => `<label class="chk"><input type="checkbox" class="export-store-chk" value="${s}" checked> ${escapeHtml(STORE_LABELS[s] || s)}</label>`).join('');
   content.innerHTML = `
     <div class="panel">
       <div class="card">
         <div class="card-title">エクスポート</div>
-        <p class="muted">マスタ・日々データをすべてまとめてJSONファイルとして書き出します。</p>
-        <button id="exportBtn" class="btn-primary">エクスポート</button>
+        <p class="muted">選択した内容をまとめてZIPファイルとして書き出します（日々のバックアップ用）。</p>
+        <div class="chk-list">${storeChecksHtml}</div>
+        <div class="actions">
+          <button id="exportSelectAll" class="btn-tiny">すべて選択</button>
+          <button id="exportSelectNone" class="btn-tiny">選択解除</button>
+        </div>
+        <button id="exportBtn" class="btn-primary">ZIPでエクスポート</button>
       </div>
       <div class="card">
         <div class="card-title">インポート</div>
-        <p class="muted">エクスポートしたJSONファイルを読み込みます。既存データは上書きされます。</p>
-        <input type="file" id="importFile" accept="application/json">
+        <p class="muted">エクスポートしたZIP（またはJSON）ファイルを読み込みます。ファイルに含まれるデータのみ上書きされます。</p>
+        <input type="file" id="importFile" accept="application/zip,application/json,.zip,.json">
         <button id="importBtn" class="btn-primary">インポート</button>
       </div>
       <div class="card">
@@ -691,9 +710,20 @@ async function renderIO(content, callbacks) {
       </div>
     </div>
   `;
-  const { exportAll, importAll } = await import('./io.js');
+  const { exportSelected, importAll } = await import('./io.js');
   const { importCatDayLogFile } = await import('./dayImport.js');
-  content.querySelector('#exportBtn').addEventListener('click', () => exportAll());
+  const storeChks = content.querySelectorAll('.export-store-chk');
+  content.querySelector('#exportSelectAll').addEventListener('click', () => {
+    storeChks.forEach(c => { c.checked = true; });
+  });
+  content.querySelector('#exportSelectNone').addEventListener('click', () => {
+    storeChks.forEach(c => { c.checked = false; });
+  });
+  content.querySelector('#exportBtn').addEventListener('click', () => {
+    const selected = Array.from(storeChks).filter(c => c.checked).map(c => c.value);
+    if (!selected.length) { alert('エクスポートする項目を選択してください'); return; }
+    exportSelected(selected);
+  });
   content.querySelector('#importBtn').addEventListener('click', async () => {
     const fileInput = content.querySelector('#importFile');
     if (!fileInput.files[0]) { alert('ファイルを選択してください'); return; }
