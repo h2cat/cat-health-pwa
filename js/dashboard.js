@@ -9,6 +9,7 @@ export const STOOL_STATE_CATEGORY = 'STOOL_STATE';
 export const VOMIT_STATE_CATEGORY = 'VOMIT_STATE';
 export const MED_UNIT_CATEGORY = 'MED_UNIT';
 export const MED_EFFECT_CATEGORY = 'MED_EFFECT';
+export const DAILY_EVENT_CATEGORY = 'DAILY_EVENT';
 
 // 初回起動時／アップデート時のマスタ種seed
 // js/initial-data.js の内容のうち、「まだ登録されていないもの」だけを追加する。
@@ -169,10 +170,12 @@ async function renderCodeMaster(content) {
     const foods = await getAll('foodMaster');
     const usedInFood = foods.some(f => f.formCode === row.code || f.typeCode === row.code || f.makerCode === row.code);
     const excretions = await getAll('excretionLog');
-    const usedInExcretion = excretions.some(e => e.stateCode === row.code);
+    const usedInExcretion = excretions.some(e => (e.stateCodes || (e.stateCode ? [e.stateCode] : [])).includes(row.code));
     const medicines = await getAll('medicineMaster');
     const usedInMedicine = medicines.some(m => m.unitCode === row.code || m.effectCode === row.code);
-    if (usedInFood || usedInExcretion || usedInMedicine) { alert('この項目は既存データで使用されているため削除できません'); return; }
+    const dailyLogs = await getAll('dailyLog');
+    const usedInDaily = dailyLogs.some(d => (d.events || []).includes(row.code));
+    if (usedInFood || usedInExcretion || usedInMedicine || usedInDaily) { alert('この項目は既存データで使用されているため削除できません'); return; }
     if (!confirm(`「${row.name}」を削除しますか？`)) return;
     await remove('codeMaster', id);
     renderCodeMaster(content);

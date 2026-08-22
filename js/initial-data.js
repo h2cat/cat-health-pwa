@@ -11,6 +11,7 @@
 // - foodMaster.formCode / typeCode / makerCode は codeMaster (FOOD_FORM / FOOD_TYPE / MAKER) の code を指定します
 // - medicineMaster.unitCode / effectCode は codeMaster (MED_UNIT / MED_EFFECT) の code を指定します
 // - recipeMaster.components は foodMaster の code と比率(ratio)の組み合わせです（例: 餌A:餌B = 6:4）
+// - うんち・ゲロの状態、日々のイベントは複数選択できます（それぞれ stateCodes / events が配列）
 // ==========================================================================
 
 // ----- コードマスタ -----
@@ -61,7 +62,11 @@ export const initialCodeMaster = [
   { category: 'MED_UNIT', code: 'G', name: 'g' },
 
   // 薬・サプリの効能（下に直接追記していってOK。例: { category: 'MED_EFFECT', code: 'ANTI_EMETIC', name: '吐き気止め' },）
-  { category: 'MED_EFFECT', code: '', name: '効能' }
+  { category: 'MED_EFFECT', code: '', name: '効能' },
+
+  // 日々のイベント（日々管理でチェックを付けられる項目。下に直接追記していってOK）
+  { category: 'DAILY_EVENT', code: '', name: '日々のイベント' },
+  { category: 'DAILY_EVENT', code: 'HOSPITAL', name: '通院' }
 ];
 
 // ----- 猫マスタ -----

@@ -1,6 +1,6 @@
 import { get, put, remove, getByIndex } from './db.js';
 import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes } from './utils.js';
-import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY } from './dashboard.js';
+import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY } from './dashboard.js';
 
 const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
 
@@ -28,6 +28,10 @@ export async function renderCatTab(container, catCode) {
 
   const navHtml = SECTIONS.map(s => `<button class="icon-nav-btn ${state.activeSection === s.key ? 'active' : ''}" data-section="${s.key}" title="${s.title}">${s.icon}</button>`).join('');
 
+  const dailyRowsForDate = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
+  const dailyForDate = dailyRowsForDate[0] || null;
+  const isInvalidDay = !!(dailyForDate && dailyForDate.invalid);
+
   container.innerHTML = `
     <div class="cat-header">
       <h2>${escapeHtml(cat.name)}</h2>
@@ -36,6 +40,7 @@ export async function renderCatTab(container, catCode) {
         ${state.date !== todayStr() ? '<button id="backToday" class="btn-tiny">今日に戻る</button>' : ''}
       </div>
     </div>
+    <label class="invalid-day-toggle"><input type="checkbox" id="invalidDayChk" ${isInvalidDay ? 'checked' : ''}> この日は記録なし（データ無効）にする</label>
     <div class="icon-nav">${navHtml}</div>
     <div id="sectionHost"></div>
     <div id="calendarSection"></div>
@@ -54,6 +59,15 @@ export async function renderCatTab(container, catCode) {
 
   const calHost = container.querySelector('#calendarSection');
   const refreshCalendar = () => renderCalendarSection(calHost, cat, state, container);
+
+  container.querySelector('#invalidDayChk').addEventListener('change', async (ev) => {
+    const currentRows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
+    const currentExisting = currentRows[0] || null;
+    const data = currentExisting ? { ...currentExisting } : { catCode: cat.code, date: state.date };
+    data.invalid = ev.target.checked;
+    await put('dailyLog', data);
+    await refreshCalendar();
+  });
 
   const sectionHost = container.querySelector('#sectionHost');
   if (state.activeSection === 'feeding') await renderFeedingSection(sectionHost, cat, state, refreshCalendar);
@@ -331,6 +345,10 @@ const EXCRETION_CONFIG = {
   VOMIT: { title: 'ゲロ記録', category: VOMIT_STATE_CATEGORY }
 };
 
+function excretionStateCodes(e) {
+  return e.stateCodes || (e.stateCode ? [e.stateCode] : []);
+}
+
 async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fixedType) {
   const cfg = EXCRETION_CONFIG[fixedType];
   const states = (await getByIndex('codeMaster', 'byCategory', cfg.category)).filter(s => s.code !== '');
@@ -338,19 +356,21 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
     .filter(e => e.type === fixedType)
     .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
-  function stateName(code) {
-    const s = states.find(x => x.code === code);
-    return s ? s.name : code;
+  function stateNames(e) {
+    return excretionStateCodes(e).map(code => {
+      const s = states.find(x => x.code === code);
+      return s ? s.name : code;
+    }).join('、') || '-';
   }
 
   const rowsHtml = entries.map(e => `<tr>
     <td>${escapeHtml(e.time)}</td>
-    <td>${escapeHtml(stateName(e.stateCode))}</td>
+    <td>${escapeHtml(stateNames(e))}</td>
     <td>${escapeHtml(e.memo || '-')}</td>
     <td><button class="btn-tiny danger" data-del-excretion="${e.id}">削除</button></td>
   </tr>`).join('');
 
-  const stateOptionsHtml = states.map(s => `<option value="${escapeHtml(s.code)}">${escapeHtml(s.name)}</option>`).join('');
+  const stateChecksHtml = states.map(s => `<label class="chk"><input type="checkbox" class="exc-state-chk" value="${escapeHtml(s.code)}"> ${escapeHtml(s.name)}</label>`).join('');
 
   host.innerHTML = `
     <div class="card">
@@ -359,14 +379,13 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
       <tbody>${rowsHtml || '<tr><td colspan="4" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
         <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="excTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
-        <div class="field"><label>状態</label><select id="excState">${stateOptionsHtml || '<option value="">未登録です</option>'}</select></div>
+        <div class="field"><label>状態（複数選択可）</label><div class="chk-list">${stateChecksHtml || '<span class="muted">未登録です</span>'}</div></div>
         <div class="field"><label>メモ</label><input id="excMemo"></div>
         <button id="excSave" class="btn-primary">入力確定</button>
       </div>
     </div>
   `;
 
-  const stateSelect = host.querySelector('#excState');
   const timeInput = host.querySelector('#excTime');
   timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
 
@@ -381,10 +400,10 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
   if (saveBtn) saveBtn.addEventListener('click', async () => {
     const time = floorToTenMinutes(timeInput.value);
     if (!time) { alert('時刻を入力してください'); return; }
-    const stateCode = stateSelect.value;
-    if (!stateCode) { alert('状態を選択してください'); return; }
+    const stateCodes = Array.from(host.querySelectorAll('.exc-state-chk:checked')).map(c => c.value);
+    if (stateCodes.length === 0) { alert('状態を1つ以上選択してください'); return; }
     const memo = host.querySelector('#excMemo').value;
-    await put('excretionLog', { catCode: cat.code, date: state.date, time, type: fixedType, stateCode, memo });
+    await put('excretionLog', { catCode: cat.code, date: state.date, time, type: fixedType, stateCodes, memo });
     renderExcretionTypeSection(host, cat, state, refreshCalendar, fixedType);
     if (refreshCalendar) refreshCalendar();
   });
@@ -439,12 +458,20 @@ async function renderMemoSection(host, cat, state, refreshCalendar) {
 async function renderDailySection(host, cat, state, refreshCalendar) {
   const rows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
   const existing = rows[0] || null;
+  const events = (await getByIndex('codeMaster', 'byCategory', DAILY_EVENT_CATEGORY)).filter(e => e.code !== '');
+  const existingEvents = (existing && existing.events) || [];
+
+  const eventChecksHtml = events.map(e => {
+    const checked = existingEvents.includes(e.code) ? 'checked' : '';
+    return `<label class="chk"><input type="checkbox" class="daily-event-chk" value="${escapeHtml(e.code)}" ${checked}> ${escapeHtml(e.name)}</label>`;
+  }).join('');
 
   host.innerHTML = `
     <div class="card">
       <div class="card-title">日々管理</div>
       <div class="field"><label>体重(kg)</label><input id="dailyWeight" type="number" step="0.01" value="${existing && existing.weight != null ? existing.weight : ''}"></div>
       <div class="field"><label>尿量(ml)</label><input id="dailyUrine" type="number" step="1" value="${existing && existing.urineAmount != null ? existing.urineAmount : ''}"></div>
+      <div class="field"><label>イベント</label><div class="chk-list">${eventChecksHtml || '<span class="muted">コードマスタの「日々のイベント」にコードを追加してください</span>'}</div></div>
       <div class="field"><label>メモ</label><input id="dailyMemo" value="${existing && existing.memo ? escapeHtml(existing.memo) : ''}"></div>
       <button id="dailySave" class="btn-primary">保存</button>
     </div>
@@ -453,14 +480,20 @@ async function renderDailySection(host, cat, state, refreshCalendar) {
     const weightVal = host.querySelector('#dailyWeight').value;
     const urineVal = host.querySelector('#dailyUrine').value;
     const memoVal = host.querySelector('#dailyMemo').value;
+    const selectedEvents = Array.from(host.querySelectorAll('.daily-event-chk:checked')).map(c => c.value);
+    // invalidフラグは他の操作(記録なしトグル)で更新されている可能性があるため直前に再取得する
+    const freshRows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
+    const freshExisting = freshRows[0] || null;
     const data = {
       catCode: cat.code,
       date: state.date,
       weight: weightVal === '' ? null : Number(weightVal),
       urineAmount: urineVal === '' ? null : Number(urineVal),
-      memo: memoVal
+      events: selectedEvents,
+      memo: memoVal,
+      invalid: freshExisting ? !!freshExisting.invalid : false
     };
-    if (existing) data.id = existing.id;
+    if (freshExisting) data.id = freshExisting.id;
     await put('dailyLog', data);
     alert('保存しました');
     renderDailySection(host, cat, state, refreshCalendar);
@@ -482,6 +515,7 @@ async function renderCalendarSection(host, cat, state, container) {
     ...excretionRows.map(r => r.date),
     ...memoRows.map(r => r.date)
   ]);
+  const invalidDates = new Set(dailyRows.filter(r => r.invalid).map(r => r.date));
 
   const y = state.calendarMonth.getFullYear();
   const m = state.calendarMonth.getMonth();
@@ -494,10 +528,13 @@ async function renderCalendarSection(host, cat, state, container) {
   for (let d = 1; d <= lastDay.getDate(); d++) {
     const dateObj = new Date(y, m, d);
     const dateStr = formatDate(dateObj);
-    const marked = markedDates.has(dateStr) ? 'marked' : '';
+    const isInvalid = invalidDates.has(dateStr);
+    const marked = !isInvalid && markedDates.has(dateStr) ? 'marked' : '';
+    const invalidClass = isInvalid ? 'invalid-day' : '';
     const selected = dateStr === state.date ? 'selected' : '';
     const isToday = dateStr === todayStr() ? 'is-today' : '';
-    cells += `<div class="cal-cell ${marked} ${selected} ${isToday}" data-date="${dateStr}">${d}${marked ? '<span class="dot"></span>' : ''}</div>`;
+    const marker = isInvalid ? '<span class="dot invalid-dot">×</span>' : (marked ? '<span class="dot"></span>' : '');
+    cells += `<div class="cal-cell ${marked} ${invalidClass} ${selected} ${isToday}" data-date="${dateStr}" title="${isInvalid ? '記録なしの日' : ''}">${d}${marker}</div>`;
   }
 
   host.innerHTML = `
