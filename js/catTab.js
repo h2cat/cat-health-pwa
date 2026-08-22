@@ -1,5 +1,6 @@
 import { get, put, remove, getByIndex } from './db.js';
-import { escapeHtml, todayStr, formatDate, calcCalorie } from './utils.js';
+import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes } from './utils.js';
+import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY } from './dashboard.js';
 
 const stateMap = {}; // catCode -> { date, calendarMonth (Date) }
 
@@ -25,6 +26,8 @@ export async function renderCatTab(container, catCode) {
       </div>
     </div>
     <div id="feedingSection"></div>
+    <div id="medicineSection"></div>
+    <div id="excretionSection"></div>
     <div id="dailySection"></div>
     <div id="calendarSection"></div>
   `;
@@ -35,31 +38,60 @@ export async function renderCatTab(container, catCode) {
     renderCatTab(container, catCode);
   });
 
-  await renderFeedingSection(container.querySelector('#feedingSection'), cat, state);
-  await renderDailySection(container.querySelector('#dailySection'), cat, state);
-  await renderCalendarSection(container.querySelector('#calendarSection'), cat, state, container);
+  const calHost = container.querySelector('#calendarSection');
+  const refreshCalendar = () => renderCalendarSection(calHost, cat, state, container);
+
+  await renderFeedingSection(container.querySelector('#feedingSection'), cat, state, refreshCalendar);
+  await renderMedicineSection(container.querySelector('#medicineSection'), cat, state, refreshCalendar);
+  await renderExcretionSection(container.querySelector('#excretionSection'), cat, state, refreshCalendar);
+  await renderDailySection(container.querySelector('#dailySection'), cat, state, refreshCalendar);
+  await refreshCalendar();
 }
 
 // ===== 給餌管理 =====
-async function renderFeedingSection(host, cat, state) {
+function resolveFeedSource(e, allFoods, allRecipes) {
+  const type = e.sourceType || (e.foodCode ? 'FOOD' : null);
+  const code = e.sourceCode || e.foodCode || null;
+  if (!type || !code) return { type: null, code: null, name: '-' };
+  if (type === 'RECIPE') {
+    const r = allRecipes.find(x => x.code === code);
+    return { type, code, name: r ? r.name : code };
+  }
+  const f = allFoods.find(x => x.code === code);
+  return { type: 'FOOD', code, name: f ? f.name : code };
+}
+
+async function renderFeedingSection(host, cat, state, refreshCalendar) {
   const { getAll } = await import('./db.js');
   const allFoods = await getAll('foodMaster');
+  const allRecipes = await getAll('recipeMaster');
   const candidateCodes = (cat.foodCandidates && cat.foodCandidates.length > 0) ? cat.foodCandidates : allFoods.map(f => f.code);
   const candidates = allFoods.filter(f => candidateCodes.includes(f.code));
 
   const entries = (await getByIndex('feedingLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
   const totalCal = Math.round(entries.reduce((s, e) => s + (e.calorie || 0), 0) * 10) / 10;
 
-  const foodOptions = candidates.map(f => `<option value="${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
+  const recipeOptions = allRecipes.map(r => `<option value="R:${escapeHtml(r.code)}">${escapeHtml(r.name)}</option>`).join('');
+  const foodOptions = candidates.map(f => `<option value="F:${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
+  let sourceOptionsHtml = '';
+  if (allRecipes.length) sourceOptionsHtml += `<optgroup label="レシピ">${recipeOptions}</optgroup>`;
+  if (candidates.length) sourceOptionsHtml += `<optgroup label="餌">${foodOptions}</optgroup>`;
+  if (!allRecipes.length && !candidates.length) sourceOptionsHtml = '<option value="">未登録です</option>';
 
-  let rowsHtml = entries.map(e => {
-    const f = allFoods.find(x => x.code === e.foodCode);
+  const rowsHtml = entries.map(e => {
+    const src = resolveFeedSource(e, allFoods, allRecipes);
+    const kindLabel = e.kind === 'SERVE' ? '提供' : '摂取';
+    const providedText = e.providedAmount != null ? `${e.providedAmount}g` : '-';
+    const eatenText = e.eatenAmount != null ? `${e.eatenAmount}g` : '-';
+    const calorieText = e.kind === 'SERVE' ? '-' : `${e.calorie || 0}kcal`;
     return `<tr>
       <td>${escapeHtml(e.time)}</td>
-      <td>${escapeHtml(f ? f.name : e.foodCode)}</td>
-      <td>${escapeHtml(e.providedAmount)}g</td>
-      <td>${escapeHtml(e.eatenAmount)}g</td>
-      <td>${escapeHtml(e.calorie)}kcal</td>
+      <td>${kindLabel}</td>
+      <td>${escapeHtml(src.name)}</td>
+      <td>${providedText}</td>
+      <td>${eatenText}</td>
+      <td>${calorieText}</td>
+      <td>${escapeHtml(e.memo || '-')}</td>
       <td><button class="btn-tiny danger" data-del-feed="${e.id}">削除</button></td>
     </tr>`;
   }).join('');
@@ -67,48 +99,125 @@ async function renderFeedingSection(host, cat, state) {
   host.innerHTML = `
     <div class="card">
       <div class="card-title">給餌管理</div>
-      <table class="tbl"><thead><tr><th>時刻</th><th>餌</th><th>提供量</th><th>摂取量</th><th>カロリー</th><th></th></tr></thead>
-      <tbody>${rowsHtml || '<tr><td colspan="6" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
+      <table class="tbl"><thead><tr><th>時刻</th><th>種別</th><th>餌・レシピ</th><th>提供量</th><th>摂取量</th><th>カロリー</th><th>メモ</th><th></th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="8" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="total-cal">合計カロリー: ${totalCal} kcal</div>
       <div class="feed-form">
-        <div class="field"><label>時刻</label><input id="feedTime" type="time" value="${nowTimeStr()}"></div>
-        <div class="field"><label>餌</label><select id="feedFood">${candidates.length ? foodOptions : '<option value="">餌が未登録です</option>'}</select></div>
-        <div class="field"><label>提供量(g)</label><input id="feedProvided" type="number" step="0.1"></div>
-        <div class="field"><label>摂取量(g)</label><input id="feedEaten" type="number" step="0.1"></div>
+        <div class="field"><label>種別</label>
+          <select id="feedKind">
+            <option value="INTAKE">摂取</option>
+            <option value="SERVE">提供</option>
+          </select>
+        </div>
+        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="feedTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
+        <div class="field"><label>餌・レシピ</label><select id="feedSource">${sourceOptionsHtml}</select></div>
+        <div class="field"><label id="feedProvidedLabel">提供量(g)</label><input id="feedProvided" type="number" step="0.1"></div>
+        <div class="field" id="feedEatenField"><label>摂取量(g)</label><input id="feedEaten" type="number" step="0.1"></div>
+        <div class="field"><label>メモ</label><input id="feedMemo"></div>
         <button id="feedSave" class="btn-primary">入力確定</button>
       </div>
     </div>
   `;
 
-  const foodSelect = host.querySelector('#feedFood');
+  const sourceSelect = host.querySelector('#feedSource');
   const providedInput = host.querySelector('#feedProvided');
+  const eatenInput = host.querySelector('#feedEaten');
+  const eatenField = host.querySelector('#feedEatenField');
+  const providedLabel = host.querySelector('#feedProvidedLabel');
+  const kindSelect = host.querySelector('#feedKind');
+  const timeInput = host.querySelector('#feedTime');
+  const memoInput = host.querySelector('#feedMemo');
+
+  const lastSelKey = `catHealth:lastFeedSelection:${cat.code}`;
+  const lastSel = localStorage.getItem(lastSelKey);
+  if (lastSel && Array.from(sourceSelect.options).some(o => o.value === lastSel)) {
+    sourceSelect.value = lastSel;
+  }
+
+  timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
+
   function applyDefault() {
-    const f = candidates.find(x => x.code === foodSelect.value);
-    if (f && f.defaultAmountG) providedInput.value = f.defaultAmountG;
+    const val = sourceSelect.value;
+    if (!val) return;
+    const [t, c] = val.split(':');
+    if (t === 'F') {
+      const f = allFoods.find(x => x.code === c);
+      if (f && f.defaultAmountG) providedInput.value = f.defaultAmountG;
+    }
   }
-  if (foodSelect) {
-    foodSelect.addEventListener('change', applyDefault);
-    applyDefault();
+  sourceSelect.addEventListener('change', applyDefault);
+  applyDefault();
+
+  function updateKindUI() {
+    const isIntake = kindSelect.value === 'INTAKE';
+    eatenField.style.display = isIntake ? '' : 'none';
+    providedLabel.textContent = isIntake ? '提供量(g)' : '提供量(g)（任意）';
   }
+  kindSelect.addEventListener('change', updateKindUI);
+  updateKindUI();
 
   host.querySelectorAll('[data-del-feed]').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('この記録を削除しますか？')) return;
     await remove('feedingLog', Number(btn.dataset.delFeed));
-    renderFeedingSection(host, cat, state);
+    renderFeedingSection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
   }));
 
   const saveBtn = host.querySelector('#feedSave');
   if (saveBtn) saveBtn.addEventListener('click', async () => {
-    const foodCode = foodSelect.value;
-    if (!foodCode) { alert('餌を選択してください'); return; }
-    const food = allFoods.find(f => f.code === foodCode);
-    const time = host.querySelector('#feedTime').value;
-    const provided = Number(providedInput.value) || 0;
-    const eaten = Number(host.querySelector('#feedEaten').value) || 0;
+    const sourceVal = sourceSelect.value;
+    if (!sourceVal) { alert('餌・レシピを選択してください'); return; }
+    const [srcType, srcCode] = sourceVal.split(':');
+    const kind = kindSelect.value;
+    const time = floorToTenMinutes(timeInput.value);
     if (!time) { alert('時刻を入力してください'); return; }
-    const calorie = calcCalorie(food ? food.caloriePer100g : 0, eaten);
-    await put('feedingLog', { catCode: cat.code, date: state.date, time, foodCode, providedAmount: provided, eatenAmount: eaten, calorie });
-    renderFeedingSection(host, cat, state);
+
+    const providedStr = providedInput.value;
+    const eatenStr = eatenInput.value;
+    if (kind === 'INTAKE') {
+      if (providedStr === '') { alert('摂取記録には提供量の入力が必要です'); return; }
+      if (eatenStr === '') { alert('摂取量を入力してください'); return; }
+    }
+    const provided = providedStr === '' ? null : Number(providedStr);
+    const eaten = eatenStr === '' ? null : Number(eatenStr);
+
+    let breakdown = [];
+    let calorie = 0;
+    if (kind === 'INTAKE' && eaten != null) {
+      if (srcType === 'F') {
+        const food = allFoods.find(f => f.code === srcCode);
+        const cal = calcCalorie(food ? food.caloriePer100g : 0, eaten);
+        breakdown = [{ foodCode: srcCode, grams: eaten, calorie: cal }];
+        calorie = cal;
+      } else {
+        const recipe = allRecipes.find(r => r.code === srcCode);
+        const totalRatio = (recipe.components || []).reduce((s, c) => s + (Number(c.ratio) || 0), 0) || 1;
+        breakdown = (recipe.components || []).map(c => {
+          const grams = Math.round(eaten * ((Number(c.ratio) || 0) / totalRatio) * 100) / 100;
+          const food = allFoods.find(f => f.code === c.foodCode);
+          return { foodCode: c.foodCode, grams, calorie: calcCalorie(food ? food.caloriePer100g : 0, grams) };
+        });
+        calorie = Math.round(breakdown.reduce((s, b) => s + b.calorie, 0) * 10) / 10;
+      }
+    }
+
+    await put('feedingLog', {
+      catCode: cat.code,
+      date: state.date,
+      time,
+      kind,
+      sourceType: srcType === 'R' ? 'RECIPE' : 'FOOD',
+      sourceCode: srcCode,
+      providedAmount: provided,
+      eatenAmount: eaten,
+      breakdown,
+      calorie,
+      memo: memoInput.value
+    });
+
+    localStorage.setItem(lastSelKey, sourceVal);
+    renderFeedingSection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
   });
 }
 
@@ -117,8 +226,163 @@ function nowTimeStr() {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// ===== サプリ・投薬管理 =====
+async function renderMedicineSection(host, cat, state, refreshCalendar) {
+  const { getAll } = await import('./db.js');
+  const allMedicines = await getAll('medicineMaster');
+  const units = (await getByIndex('codeMaster', 'byCategory', MED_UNIT_CATEGORY)).filter(u => u.code !== '');
+  const effects = (await getByIndex('codeMaster', 'byCategory', MED_EFFECT_CATEGORY)).filter(e => e.code !== '');
+  const entries = (await getByIndex('medicineLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  function unitName(code) {
+    const u = units.find(x => x.code === code);
+    return u ? u.name : '';
+  }
+  function effectName(code) {
+    const eff = effects.find(x => x.code === code);
+    return eff ? eff.name : '-';
+  }
+
+  const medOptions = allMedicines.map(m => `<option value="${escapeHtml(m.code)}">${escapeHtml(m.name)}</option>`).join('');
+
+  const rowsHtml = entries.map(e => {
+    const m = allMedicines.find(x => x.code === e.medicineCode);
+    const doseText = e.dose != null ? `${e.dose}${unitName(m ? m.unitCode : '')}` : '-';
+    return `<tr>
+      <td>${escapeHtml(e.time)}</td>
+      <td>${escapeHtml(m ? m.name : e.medicineCode)}</td>
+      <td>${escapeHtml(m ? effectName(m.effectCode) : '-')}</td>
+      <td>${escapeHtml(doseText)}</td>
+      <td><button class="btn-tiny danger" data-del-medicine-log="${e.id}">削除</button></td>
+    </tr>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div class="card">
+      <div class="card-title">サプリ・投薬管理</div>
+      <table class="tbl"><thead><tr><th>時刻</th><th>サプリ・薬</th><th>効能</th><th>用量</th><th></th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="5" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
+      <div class="feed-form">
+        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="medTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
+        <div class="field"><label>サプリ・薬</label><select id="medSelect">${allMedicines.length ? medOptions : '<option value="">未登録です</option>'}</select></div>
+        <div class="field"><label id="medDoseLabel">用量</label><input id="medDose" type="number" step="0.01"></div>
+        <button id="medSave" class="btn-primary">入力確定</button>
+      </div>
+    </div>
+  `;
+
+  const medSelect = host.querySelector('#medSelect');
+  const doseInput = host.querySelector('#medDose');
+  const doseLabel = host.querySelector('#medDoseLabel');
+  const timeInput = host.querySelector('#medTime');
+  timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
+  function applyDefaultDose() {
+    const m = allMedicines.find(x => x.code === medSelect.value);
+    if (m && m.defaultDose != null) doseInput.value = m.defaultDose;
+    doseLabel.textContent = m ? `用量（${unitName(m.unitCode) || '単位未設定'}）` : '用量';
+  }
+  if (medSelect) {
+    medSelect.addEventListener('change', applyDefaultDose);
+    applyDefaultDose();
+  }
+
+  host.querySelectorAll('[data-del-medicine-log]').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('この記録を削除しますか？')) return;
+    await remove('medicineLog', Number(btn.dataset.delMedicineLog));
+    renderMedicineSection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
+  }));
+
+  const saveBtn = host.querySelector('#medSave');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const medicineCode = medSelect.value;
+    if (!medicineCode) { alert('サプリ・薬を選択してください'); return; }
+    const time = floorToTenMinutes(timeInput.value);
+    if (!time) { alert('時刻を入力してください'); return; }
+    const doseStr = doseInput.value;
+    const dose = doseStr === '' ? null : Number(doseStr);
+    await put('medicineLog', { catCode: cat.code, date: state.date, time, medicineCode, dose });
+    renderMedicineSection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
+  });
+}
+
+// ===== うんち・ゲロ記録 =====
+async function renderExcretionSection(host, cat, state, refreshCalendar) {
+  const stoolStates = (await getByIndex('codeMaster', 'byCategory', STOOL_STATE_CATEGORY)).filter(s => s.code !== '');
+  const vomitStates = (await getByIndex('codeMaster', 'byCategory', VOMIT_STATE_CATEGORY)).filter(s => s.code !== '');
+  const entries = (await getByIndex('excretionLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  function stateName(type, code) {
+    const list = type === 'POOP' ? stoolStates : vomitStates;
+    const s = list.find(x => x.code === code);
+    return s ? s.name : code;
+  }
+
+  const rowsHtml = entries.map(e => `<tr>
+    <td>${escapeHtml(e.time)}</td>
+    <td>${e.type === 'POOP' ? 'うんち' : 'ゲロ'}</td>
+    <td>${escapeHtml(stateName(e.type, e.stateCode))}</td>
+    <td>${escapeHtml(e.memo || '-')}</td>
+    <td><button class="btn-tiny danger" data-del-excretion="${e.id}">削除</button></td>
+  </tr>`).join('');
+
+  function stateOptions(type) {
+    const list = type === 'POOP' ? stoolStates : vomitStates;
+    return list.map(s => `<option value="${escapeHtml(s.code)}">${escapeHtml(s.name)}</option>`).join('');
+  }
+
+  host.innerHTML = `
+    <div class="card">
+      <div class="card-title">うんち・ゲロ記録</div>
+      <table class="tbl"><thead><tr><th>時刻</th><th>種別</th><th>状態</th><th>メモ</th><th></th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="5" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
+      <div class="feed-form">
+        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="excTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
+        <div class="field"><label>種別</label>
+          <select id="excType">
+            <option value="POOP">うんち</option>
+            <option value="VOMIT">ゲロ</option>
+          </select>
+        </div>
+        <div class="field"><label>状態</label><select id="excState">${stateOptions('POOP')}</select></div>
+        <div class="field"><label>メモ</label><input id="excMemo"></div>
+        <button id="excSave" class="btn-primary">入力確定</button>
+      </div>
+    </div>
+  `;
+
+  const typeSelect = host.querySelector('#excType');
+  const stateSelect = host.querySelector('#excState');
+  const timeInput = host.querySelector('#excTime');
+  timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
+  typeSelect.addEventListener('change', () => {
+    stateSelect.innerHTML = stateOptions(typeSelect.value);
+  });
+
+  host.querySelectorAll('[data-del-excretion]').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('この記録を削除しますか？')) return;
+    await remove('excretionLog', Number(btn.dataset.delExcretion));
+    renderExcretionSection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
+  }));
+
+  const saveBtn = host.querySelector('#excSave');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const time = floorToTenMinutes(timeInput.value);
+    if (!time) { alert('時刻を入力してください'); return; }
+    const type = typeSelect.value;
+    const stateCode = stateSelect.value;
+    if (!stateCode) { alert('状態を選択してください'); return; }
+    const memo = host.querySelector('#excMemo').value;
+    await put('excretionLog', { catCode: cat.code, date: state.date, time, type, stateCode, memo });
+    renderExcretionSection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
+  });
+}
+
 // ===== 日々管理 =====
-async function renderDailySection(host, cat, state) {
+async function renderDailySection(host, cat, state, refreshCalendar) {
   const rows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
   const existing = rows[0] || null;
 
@@ -145,7 +409,8 @@ async function renderDailySection(host, cat, state) {
     if (existing) data.id = existing.id;
     await put('dailyLog', data);
     alert('保存しました');
-    renderDailySection(host, cat, state);
+    renderDailySection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
   });
 }
 
@@ -153,7 +418,14 @@ async function renderDailySection(host, cat, state) {
 async function renderCalendarSection(host, cat, state, container) {
   const feedRows = await getByIndex('feedingLog', 'byCat', cat.code);
   const dailyRows = await getByIndex('dailyLog', 'byCat', cat.code);
-  const markedDates = new Set([...feedRows.map(r => r.date), ...dailyRows.map(r => r.date)]);
+  const medicineRows = await getByIndex('medicineLog', 'byCat', cat.code);
+  const excretionRows = await getByIndex('excretionLog', 'byCat', cat.code);
+  const markedDates = new Set([
+    ...feedRows.map(r => r.date),
+    ...dailyRows.map(r => r.date),
+    ...medicineRows.map(r => r.date),
+    ...excretionRows.map(r => r.date)
+  ]);
 
   const y = state.calendarMonth.getFullYear();
   const m = state.calendarMonth.getMonth();

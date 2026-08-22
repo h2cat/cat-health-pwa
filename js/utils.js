@@ -32,6 +32,16 @@ export function calcCalorie(caloriePer100g, gramsEaten) {
   return Math.round((c / 100) * g * 10) / 10;
 }
 
+// "HH:MM" を10分単位に切り捨てる（例: 14:37 → 14:30）
+export function floorToTenMinutes(timeStr) {
+  if (!timeStr) return timeStr;
+  const m = timeStr.match(/^(\d{1,2}):(\d{1,2})/);
+  if (!m) return timeStr;
+  const h = String(m[1]).padStart(2, '0');
+  const min = String(Math.floor(Number(m[2]) / 10) * 10).padStart(2, '0');
+  return `${h}:${min}`;
+}
+
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }

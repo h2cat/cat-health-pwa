@@ -1,6 +1,6 @@
 // IndexedDB wrapper (Promiseベース)
 const DB_NAME = 'catHealthDB';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 
 let dbPromise = null;
 
@@ -31,6 +31,22 @@ export function openDB() {
         const store = db.createObjectStore('feedingLog', { keyPath: 'id', autoIncrement: true });
         store.createIndex('byCatDate', ['catCode', 'date'], { unique: false });
         store.createIndex('byCat', 'catCode', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('medicineMaster')) {
+        db.createObjectStore('medicineMaster', { keyPath: 'code' });
+      }
+      if (!db.objectStoreNames.contains('medicineLog')) {
+        const store = db.createObjectStore('medicineLog', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('byCatDate', ['catCode', 'date'], { unique: false });
+        store.createIndex('byCat', 'catCode', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('excretionLog')) {
+        const store = db.createObjectStore('excretionLog', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('byCatDate', ['catCode', 'date'], { unique: false });
+        store.createIndex('byCat', 'catCode', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('recipeMaster')) {
+        db.createObjectStore('recipeMaster', { keyPath: 'code' });
       }
     };
     req.onsuccess = (e) => resolve(e.target.result);
@@ -97,4 +113,4 @@ export async function getByIndex(storeName, indexName, query) {
   });
 }
 
-export const STORES = ['codeMaster', 'catMaster', 'foodMaster', 'dailyLog', 'feedingLog'];
+export const STORES = ['codeMaster', 'catMaster', 'foodMaster', 'dailyLog', 'feedingLog', 'medicineMaster', 'medicineLog', 'excretionLog', 'recipeMaster'];
