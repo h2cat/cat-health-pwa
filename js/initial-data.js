@@ -137,7 +137,7 @@ export const initialMedicineMaster = [
   { code: 'DIABUSTER', name: 'ディアバスター', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_DIARRHEAL', memo: '1日に2回or頓服' },
   { code: 'PRONAMIDE', name: 'プロナミド', abbr: 'プロナミド', kindFlag: 'DRUG', defaultDose: 0.5, unitCode: 'TABLET', effectCode: 'ANTI_EMETIC', memo: '1日2回 1/2錠（カレンダー記載の「プロアミド」は同一薬の表記ゆれ）' },
   { code: 'RINGERS', name: '点滴', abbr: '点滴', kindFlag: 'DRUG', defaultDose: 200, unitCode: 'ML', effectCode: 'ANTI_EMETIC', memo: 'リンゲル液' },
-  { code: 'MOEGI_OIL', name: 'モエギオイル25mg', abbr: 'モエギオイル', kindFlag: 'SUPLI', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_INFLAMMATORY', memo: 'DHCのやつ' },
+  { code: 'MOEGI_OIL', name: 'モエギオイル25mg', abbr: 'モエギオイル', kindFlag: 'SUPPLEMENT', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_INFLAMMATORY', memo: 'DHCのやつ' },
 ];
 
 // ----- レシピマスタ（複数の餌を混ぜて与える場合のみ登録。単一の餌はそのまま餌マスタから選べます） -----

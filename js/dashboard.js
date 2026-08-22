@@ -327,49 +327,90 @@ async function renderFoodMaster(content) {
   const makers = await getByIndex('codeMaster', 'byCategory', MAKER_CATEGORY);
   const makerCodes = makers.filter(m => m.code !== '');
 
-  let html = `<div class="panel"><div class="panel-header"><h3>餌マスタ</h3></div>`;
-  foods.forEach(f => {
-    const formName = formCodes.find(fc => fc.code === f.formCode);
-    const typeName = typeCodes.find(tc => tc.code === f.typeCode);
-    const makerName = makerCodes.find(mc => mc.code === f.makerCode);
-    html += `<div class="card">
-      <div class="card-title">${escapeHtml(f.name)} <span class="muted">(${escapeHtml(f.code)})</span></div>
-      <div class="kv">略称: ${escapeHtml(f.abbr || '-')}</div>
-      <div class="kv">メーカー: ${escapeHtml(makerName ? makerName.name : '-')}</div>
-      <div class="kv">100gあたりカロリー: ${escapeHtml(f.caloriePer100g)} kcal</div>
-      <div class="kv">形態: ${escapeHtml(formName ? formName.name : '-')}</div>
-      <div class="kv">種類: ${escapeHtml(typeName ? typeName.name : '-')}</div>
-      <div class="kv">給仕デフォルト量: ${escapeHtml(f.defaultAmountG)} g</div>
-      <div class="actions">
-        <button class="btn-small" data-edit-food="${escapeHtml(f.code)}">編集</button>
-        <button class="btn-small danger" data-del-food="${escapeHtml(f.code)}">削除</button>
-      </div>
-    </div>`;
-  });
-  html += `<div class="card"><div class="card-title">新規餌を追加</div><div id="foodForm"></div></div></div>`;
-  content.innerHTML = html;
+  const makerOptionsHtml = makerCodes.map(m => `<option value="${escapeHtml(m.code)}">${escapeHtml(m.name)}</option>`).join('');
+  const formOptionsHtml = formCodes.map(f => `<option value="${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
+  const typeOptionsHtml = typeCodes.map(t => `<option value="${escapeHtml(t.code)}">${escapeHtml(t.name)}</option>`).join('');
+
+  content.innerHTML = `<div class="panel">
+    <div class="panel-header"><h3>餌マスタ</h3></div>
+    <div class="feed-filter">
+      <input id="foodMasterSearch" type="text" placeholder="餌名・略称で検索">
+      <select id="foodMasterFilterMaker"><option value="">メーカー(すべて)</option>${makerOptionsHtml}</select>
+      <select id="foodMasterFilterForm"><option value="">形態(すべて)</option>${formOptionsHtml}</select>
+      <select id="foodMasterFilterType"><option value="">種類(すべて)</option>${typeOptionsHtml}</select>
+    </div>
+    <div id="foodListHost"></div>
+    <div class="card"><div class="card-title">新規餌を追加</div><div id="foodForm"></div></div>
+  </div>`;
+
+  const listHost = content.querySelector('#foodListHost');
+  const searchInput = content.querySelector('#foodMasterSearch');
+  const filterMaker = content.querySelector('#foodMasterFilterMaker');
+  const filterForm = content.querySelector('#foodMasterFilterForm');
+  const filterType = content.querySelector('#foodMasterFilterType');
+
+  function getFilteredFoods() {
+    const q = (searchInput.value || '').trim().toLowerCase();
+    return foods.filter(f => {
+      if (filterMaker.value && f.makerCode !== filterMaker.value) return false;
+      if (filterForm.value && f.formCode !== filterForm.value) return false;
+      if (filterType.value && f.typeCode !== filterType.value) return false;
+      if (q && !(f.name || '').toLowerCase().includes(q) && !(f.abbr || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+
+  function renderList() {
+    const filtered = getFilteredFoods();
+    let html = '';
+    filtered.forEach(f => {
+      const formName = formCodes.find(fc => fc.code === f.formCode);
+      const typeName = typeCodes.find(tc => tc.code === f.typeCode);
+      const makerName = makerCodes.find(mc => mc.code === f.makerCode);
+      html += `<div class="card">
+        <div class="card-title">${escapeHtml(f.name)} <span class="muted">(${escapeHtml(f.code)})</span></div>
+        <div class="kv">略称: ${escapeHtml(f.abbr || '-')}</div>
+        <div class="kv">メーカー: ${escapeHtml(makerName ? makerName.name : '-')}</div>
+        <div class="kv">100gあたりカロリー: ${escapeHtml(f.caloriePer100g)} kcal</div>
+        <div class="kv">形態: ${escapeHtml(formName ? formName.name : '-')}</div>
+        <div class="kv">種類: ${escapeHtml(typeName ? typeName.name : '-')}</div>
+        <div class="kv">給仕デフォルト量: ${escapeHtml(f.defaultAmountG)} g</div>
+        <div class="actions">
+          <button class="btn-small" data-edit-food="${escapeHtml(f.code)}">編集</button>
+          <button class="btn-small danger" data-del-food="${escapeHtml(f.code)}">削除</button>
+        </div>
+      </div>`;
+    });
+    listHost.innerHTML = html || '<div class="muted">該当する餌がありません</div>';
+
+    listHost.querySelectorAll('[data-edit-food]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.editFood;
+      const f = await get('foodMaster', code);
+      const formHost = el(`<div class="card"><div class="card-title">餌編集: ${escapeHtml(f.name)}</div><div></div></div>`);
+      btn.closest('.card').replaceWith(formHost);
+      renderFoodForm(formHost.querySelector('div:last-child'), f, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content));
+    }));
+
+    listHost.querySelectorAll('[data-del-food]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.delFood;
+      const feeding = await getAll('feedingLog');
+      const usedInFeeding = feeding.some(x => x.foodCode === code || x.sourceCode === code || (x.breakdown || []).some(b => b.foodCode === code));
+      const recipes = await getAll('recipeMaster');
+      const usedInRecipes = recipes.some(r => (r.components || []).some(c => c.foodCode === code));
+      if (usedInFeeding || usedInRecipes) { alert('この餌は使用中のため削除できません'); return; }
+      if (!confirm('この餌を削除しますか？')) return;
+      await remove('foodMaster', code);
+      renderFoodMaster(content);
+    }));
+  }
+
+  searchInput.addEventListener('input', renderList);
+  filterMaker.addEventListener('change', renderList);
+  filterForm.addEventListener('change', renderList);
+  filterType.addEventListener('change', renderList);
+  renderList();
 
   renderFoodForm(content.querySelector('#foodForm'), null, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content));
-
-  content.querySelectorAll('[data-edit-food]').forEach(btn => btn.addEventListener('click', async () => {
-    const code = btn.dataset.editFood;
-    const f = await get('foodMaster', code);
-    const formHost = el(`<div class="card"><div class="card-title">餌編集: ${escapeHtml(f.name)}</div><div></div></div>`);
-    btn.closest('.card').replaceWith(formHost);
-    renderFoodForm(formHost.querySelector('div:last-child'), f, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content));
-  }));
-
-  content.querySelectorAll('[data-del-food]').forEach(btn => btn.addEventListener('click', async () => {
-    const code = btn.dataset.delFood;
-    const feeding = await getAll('feedingLog');
-    const usedInFeeding = feeding.some(x => x.foodCode === code || x.sourceCode === code || (x.breakdown || []).some(b => b.foodCode === code));
-    const recipes = await getAll('recipeMaster');
-    const usedInRecipes = recipes.some(r => (r.components || []).some(c => c.foodCode === code));
-    if (usedInFeeding || usedInRecipes) { alert('この餌は使用中のため削除できません'); return; }
-    if (!confirm('この餌を削除しますか？')) return;
-    await remove('foodMaster', code);
-    renderFoodMaster(content);
-  }));
 }
 
 function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSaved) {
