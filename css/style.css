@@ -19,6 +19,22 @@ header.app-header {
   color: #fff;
   font-weight: bold;
   font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.update-btn {
+  font-size: 13px;
+  font-weight: normal;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.3);
+  color: #fff;
+  cursor: pointer;
+}
+.update-btn:active {
+  background: rgba(255, 255, 255, 0.5);
 }
 #tabBar {
   display: flex;

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cat-health-cache-v1';
+const CACHE_NAME = 'cat-health-cache-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,9 @@ const ASSETS = [
   './js/catTab.js',
   './js/io.js',
   './js/utils.js',
+  './js/zip.js',
+  './js/dayImport.js',
+  './js/initial-data.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];

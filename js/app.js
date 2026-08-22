@@ -4,6 +4,7 @@ import { renderCatTab } from './catTab.js';
 
 const tabBar = document.getElementById('tabBar');
 const tabContent = document.getElementById('tabContent');
+const updateBtn = document.getElementById('updateBtn');
 let activeTab = 'dashboard';
 
 async function init() {
@@ -15,6 +16,29 @@ async function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});
   }
+
+  if (updateBtn) updateBtn.addEventListener('click', forceUpdate);
+}
+
+// キャッシュ・Service Workerを完全にクリアしてから再読み込みする。
+// JSを更新してもiPhone等で古いキャッシュがなかなか消えないため、手動で強制更新できるようにしたもの。
+async function forceUpdate() {
+  if (!confirm('最新版を確認して読み込み直します。よろしいですか？')) return;
+  updateBtn.disabled = true;
+  updateBtn.textContent = '更新中…';
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+  } catch (e) {
+    // キャッシュ削除に失敗しても、とにかくリロードは試みる
+  }
+  location.reload();
 }
 
 async function renderTabBar() {
