@@ -151,9 +151,8 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
           <select id="filterForm"><option value="">形態(すべて)</option>${formOptionsHtml}</select>
           <select id="filterType"><option value="">種類(すべて)</option>${typeOptionsHtml}</select>
         </div>
-        <div class="field"><label>餌・レシピ</label><select id="feedSource"></select></div>
-        <div class="field"><label id="feedProvidedLabel">提供量(g)</label><input id="feedProvided" type="number" step="0.1" value="${editingEntry && editingEntry.providedAmount != null ? editingEntry.providedAmount : ''}"></div>
-        <div class="field" id="feedEatenField"><label>摂取量(g)</label><input id="feedEaten" type="number" step="0.1" value="${editingEntry && editingEntry.eatenAmount != null ? editingEntry.eatenAmount : ''}"></div>
+        <div class="field"><label id="feedSourceLabel">餌・レシピ</label><select id="feedSource"></select></div>
+        <div class="field"><label id="feedAmountLabel">量(g)</label><input id="feedAmount" type="number" step="0.1" value="${editingEntry ? (editingEntry.kind === 'SERVE' ? (editingEntry.providedAmount != null ? editingEntry.providedAmount : '') : (editingEntry.eatenAmount != null ? editingEntry.eatenAmount : '')) : ''}"></div>
         <div class="field"><label>メモ</label><input id="feedMemo" value="${editingEntry ? escapeHtml(editingEntry.memo || '') : ''}"></div>
         <button id="feedSave" class="btn-primary">${editingEntry ? '更新' : '入力確定'}</button>
       </div>
@@ -165,10 +164,9 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   const filterMaker = host.querySelector('#filterMaker');
   const filterForm = host.querySelector('#filterForm');
   const filterType = host.querySelector('#filterType');
-  const providedInput = host.querySelector('#feedProvided');
-  const eatenInput = host.querySelector('#feedEaten');
-  const eatenField = host.querySelector('#feedEatenField');
-  const providedLabel = host.querySelector('#feedProvidedLabel');
+  const amountInput = host.querySelector('#feedAmount');
+  const amountLabel = host.querySelector('#feedAmountLabel');
+  const sourceLabel = host.querySelector('#feedSourceLabel');
   const kindSelect = host.querySelector('#feedKind');
   const timeInput = host.querySelector('#feedTime');
   const memoInput = host.querySelector('#feedMemo');
@@ -197,10 +195,9 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
     const recipes = getFilteredRecipes();
     const recipeOptions = recipes.map(r => `<option value="R:${escapeHtml(r.code)}">${escapeHtml(r.name)}</option>`).join('');
     const foodOptions = foods.map(f => `<option value="F:${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
-    let html = '';
+    let html = '<option value="">（未選択）</option>';
     if (recipes.length) html += `<optgroup label="レシピ">${recipeOptions}</optgroup>`;
     if (foods.length) html += `<optgroup label="餌">${foodOptions}</optgroup>`;
-    if (!recipes.length && !foods.length) html = '<option value="">該当する餌・レシピがありません</option>';
     return html;
   }
   function rebuildSourceSelect(preserveValue) {
@@ -216,9 +213,9 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   rebuildSourceSelect(null);
   {
     const optionValues = Array.from(sourceSelect.options).map(o => o.value);
-    const editingVal = editingEntry ? `${editingEntry.sourceType === 'RECIPE' ? 'R' : 'F'}:${editingEntry.sourceCode}` : null;
-    if (editingVal && optionValues.includes(editingVal)) {
-      sourceSelect.value = editingVal;
+    const editingVal = editingEntry && editingEntry.sourceCode ? `${editingEntry.sourceType === 'RECIPE' ? 'R' : 'F'}:${editingEntry.sourceCode}` : (editingEntry ? '' : null);
+    if (editingEntry) {
+      sourceSelect.value = optionValues.includes(editingVal) ? editingVal : '';
     } else if (lastSel && optionValues.includes(lastSel)) {
       sourceSelect.value = lastSel;
     } else if (allFoods.length && optionValues.includes(`F:${allFoods[0].code}`)) {
@@ -236,7 +233,7 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
     const [t, c] = val.split(':');
     if (t === 'F') {
       const f = allFoods.find(x => x.code === c);
-      if (f && f.defaultAmountG) providedInput.value = f.defaultAmountG;
+      if (f && f.defaultAmountG) amountInput.value = f.defaultAmountG;
     }
   }
   sourceSelect.addEventListener('change', applyDefault);
@@ -247,8 +244,8 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
 
   function updateKindUI() {
     const isIntake = kindSelect.value === 'INTAKE';
-    eatenField.style.display = isIntake ? '' : 'none';
-    providedLabel.textContent = isIntake ? '提供量(g)' : '提供量(g)（任意）';
+    amountLabel.textContent = isIntake ? '摂取量(g)' : '提供量(g)（任意）';
+    sourceLabel.textContent = isIntake ? '餌・レシピ' : '餌・レシピ（任意）';
   }
   kindSelect.addEventListener('change', updateKindUI);
   updateKindUI();
@@ -275,20 +272,17 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   const saveBtn = host.querySelector('#feedSave');
   if (saveBtn) saveBtn.addEventListener('click', async () => {
     const sourceVal = sourceSelect.value;
-    if (!sourceVal) { alert('餌・レシピを選択してください'); return; }
-    const [srcType, srcCode] = sourceVal.split(':');
     const kind = kindSelect.value;
+    if (kind === 'INTAKE' && !sourceVal) { alert('餌・レシピを選択してください'); return; }
+    const srcType = sourceVal ? sourceVal.split(':')[0] : null;
+    const srcCode = sourceVal ? sourceVal.split(':')[1] : null;
     const time = nightChk.checked ? '99:00' : normalizeEntryTime(floorToTenMinutes(timeInput.value));
     if (!time) { alert('時刻を入力してください'); return; }
 
-    const providedStr = providedInput.value;
-    const eatenStr = eatenInput.value;
-    if (kind === 'INTAKE') {
-      if (providedStr === '') { alert('摂取記録には提供量の入力が必要です'); return; }
-      if (eatenStr === '') { alert('摂取量を入力してください'); return; }
-    }
-    const provided = providedStr === '' ? null : Number(providedStr);
-    const eaten = eatenStr === '' ? null : Number(eatenStr);
+    const amountStr = amountInput.value;
+    if (kind === 'INTAKE' && amountStr === '') { alert('摂取量を入力してください'); return; }
+    const provided = kind === 'SERVE' && amountStr !== '' ? Number(amountStr) : null;
+    const eaten = kind === 'INTAKE' && amountStr !== '' ? Number(amountStr) : null;
 
     let breakdown = [];
     let calorie = 0;
@@ -315,8 +309,8 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
       date: state.date,
       time,
       kind,
-      sourceType: srcType === 'R' ? 'RECIPE' : 'FOOD',
-      sourceCode: srcCode,
+      sourceType: srcType ? (srcType === 'R' ? 'RECIPE' : 'FOOD') : null,
+      sourceCode: srcCode || null,
       providedAmount: provided,
       eatenAmount: eaten,
       breakdown,
