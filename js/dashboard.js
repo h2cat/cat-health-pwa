@@ -1,4 +1,4 @@
-import { getAll, get, put, remove, getByIndex } from './db.js';
+import { getAll, get, put, remove, getByIndex, clearStore, STORES } from './db.js';
 import { escapeHtml, el } from './utils.js';
 import { initialCodeMaster, initialCatMaster, initialFoodMaster, initialMedicineMaster, initialRecipeMaster } from './initial-data.js';
 
@@ -586,6 +586,11 @@ async function renderIO(content, callbacks) {
         <input type="file" id="importFile" accept="application/json">
         <button id="importBtn" class="btn-primary">インポート</button>
       </div>
+      <div class="card">
+        <div class="card-title">初期化</div>
+        <p class="muted">保存されているデータをすべて削除し、js/initial-data.js の内容だけを反映し直します。元に戻せません。</p>
+        <button id="resetBtn" class="btn-small danger">初期化する</button>
+      </div>
     </div>
   `;
   const { exportAll, importAll } = await import('./io.js');
@@ -597,5 +602,14 @@ async function renderIO(content, callbacks) {
     await importAll(fileInput.files[0]);
     if (callbacks && callbacks.onCatsChanged) callbacks.onCatsChanged();
     alert('インポートしました');
+  });
+  content.querySelector('#resetBtn').addEventListener('click', async () => {
+    if (!confirm('すべてのデータを削除し、js/initial-data.js の内容で初期化します。よろしいですか？（元に戻せません）')) return;
+    for (const store of STORES) {
+      await clearStore(store);
+    }
+    await seedDefaults();
+    alert('初期化しました。');
+    location.reload();
   });
 }
