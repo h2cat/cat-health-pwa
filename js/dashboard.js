@@ -62,12 +62,12 @@ async function ensureRecipeMaster(entries) {
 export async function renderDashboard(container, callbacks) {
   container.innerHTML = `
     <div class="subtabs">
-      <button data-sub="code" class="subtab active">コードマスタ</button>
-      <button data-sub="cat" class="subtab">猫マスタ</button>
-      <button data-sub="food" class="subtab">餌マスタ</button>
-      <button data-sub="recipe" class="subtab">レシピ</button>
-      <button data-sub="medicine" class="subtab">薬・サプリマスタ</button>
-      <button data-sub="io" class="subtab">データ入出力</button>
+      <button data-sub="code" class="subtab active" title="コードマスタ">🏷️</button>
+      <button data-sub="cat" class="subtab" title="猫マスタ">🐱</button>
+      <button data-sub="food" class="subtab" title="餌マスタ">🍽️</button>
+      <button data-sub="recipe" class="subtab" title="レシピ">📖</button>
+      <button data-sub="medicine" class="subtab" title="薬・サプリマスタ">💊</button>
+      <button data-sub="io" class="subtab" title="データ入出力">📁</button>
     </div>
     <div id="dashContent"></div>
   `;
