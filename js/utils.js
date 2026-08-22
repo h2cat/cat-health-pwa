@@ -20,6 +20,14 @@ export function formatDate(d) {
   return `${y}-${m}-${day}`;
 }
 
+// "YYYY-MM-DD" に days日を加減算した日付文字列を返す
+export function addDaysStr(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return formatDate(dt);
+}
+
 export function el(html) {
   const tmp = document.createElement('div');
   tmp.innerHTML = html.trim();

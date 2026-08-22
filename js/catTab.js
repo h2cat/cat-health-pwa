@@ -1,5 +1,5 @@
 import { get, put, remove, getByIndex } from './db.js';
-import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml } from './utils.js';
+import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml, addDaysStr } from './utils.js';
 import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY, FOOD_FORM_CATEGORY, FOOD_TYPE_CATEGORY, MAKER_CATEGORY } from './dashboard.js';
 
 const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
@@ -32,7 +32,9 @@ export async function renderCatTab(container, catCode) {
     <div class="cat-header">
       <h2>${escapeHtml(cat.name)}</h2>
       <div class="date-bar">
+        <button id="prevDay" class="btn-tiny">＜</button>
         <span id="selDate" class="sel-date">${escapeHtml(state.date)}</span>
+        <button id="nextDay" class="btn-tiny">＞</button>
         ${state.date !== todayStr() ? '<button id="backToday" class="btn-tiny">今日に戻る</button>' : ''}
       </div>
     </div>
@@ -44,6 +46,15 @@ export async function renderCatTab(container, catCode) {
   const backBtn = container.querySelector('#backToday');
   if (backBtn) backBtn.addEventListener('click', () => {
     state.date = todayStr();
+    renderCatTab(container, catCode);
+  });
+
+  container.querySelector('#prevDay').addEventListener('click', () => {
+    state.date = addDaysStr(state.date, -1);
+    renderCatTab(container, catCode);
+  });
+  container.querySelector('#nextDay').addEventListener('click', () => {
+    state.date = addDaysStr(state.date, 1);
     renderCatTab(container, catCode);
   });
 
@@ -119,10 +130,9 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
 
   host.innerHTML = `
     <div class="card">
-      <div class="card-title">給餌管理</div>
+      <div class="card-title">給餌管理 <span class="total-cal-inline">合計 ${totalCal} kcal</span></div>
       <table class="tbl"><thead><tr><th>時刻</th><th>種別</th><th>餌・レシピ</th><th>量</th><th>カロリー</th><th>メモ</th><th></th><th></th></tr></thead>
       <tbody>${rowsHtml || '<tr><td colspan="8" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
-      <div class="total-cal">合計カロリー: ${totalCal} kcal</div>
       <div class="feed-form">
         ${editingEntry ? '<div class="editing-banner">記録を編集中<button id="feedCancelEdit" class="btn-tiny">キャンセル</button></div>' : ''}
         <div class="field"><label>種別</label>

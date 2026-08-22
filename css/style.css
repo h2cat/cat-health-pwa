@@ -207,6 +207,7 @@ button {
 
 .feed-form { border-top: 1px dashed #eee; padding-top: 8px; margin-top: 8px; }
 .total-cal { font-weight: bold; color: #d8792f; margin-bottom: 8px; }
+.total-cal-inline { font-weight: bold; color: #d8792f; font-size: 13px; margin-left: auto; }
 .feed-filter {
   display: flex;
   flex-wrap: wrap;
