@@ -39,6 +39,10 @@ export const initialCodeMaster = [
   { category: 'MAKER', code: 'HILLS', name: 'ヒルズ' },
   { category: 'MAKER', code: 'PURINA', name: 'ピュリナ' },
   { category: 'MAKER', code: 'DRS_CARE', name: 'ドクターズケア' },
+  { category: 'MAKER', code: 'HAVEST', name: 'HAVEST(病院専用)' },
+  { category: 'MAKER', code: 'INABA', name: 'いなば' },
+  { category: 'MAKER', code: 'UNKNOWN', name: '不明' },
+  { category: 'MAKER', code: 'OTHER', name: 'その他' },
 
   // うんちの状態（自由に言葉や項目を追加・変更してOK）
   { category: 'STOOL_STATE', code: '', name: 'うんちの状態' },
@@ -71,6 +75,7 @@ export const initialCodeMaster = [
   { category: 'MED_EFFECT', code: 'ANTI_EMETIC', name: '制吐' },
   { category: 'MED_EFFECT', code: 'APPETITE_STIMULATION', name: '食欲増進' },
   { category: 'MED_EFFECT', code: 'ANTI_DIARRHEAL', name: '下痢止め' },
+  { category: 'MED_EFFECT', code: 'ANTI_INFLAMMATORY', name: '抗炎症作用' },
 
   // 日々のイベント（日々管理でチェックを付けられる項目。下に直接追記していってOK）
   { category: 'DAILY_EVENT', code: '', name: '日々のイベント' },
@@ -85,11 +90,42 @@ export const initialCatMaster = [
 ];
 
 // ----- 餌マスタ -----
-// 例: { code: 'F001', maker: 'メーカー名', name: '商品名', abbr: '略称', caloriePer100g: 350, formCode: 'DRY', typeCode: 'RENAL_THERAPY', defaultAmountG: 40 },
+// 例: { code: 'F001', maker: 'メーカー名', name: '商品名', abbr: '略称', caloriePer100g: 350, formCode: 'DRY', typeCode: 'RENAL_THERAPY', defaultAmountG: 40 ,memo: ''},
 export const initialFoodMaster = [
-  { code: 'SELECT_DUCK_DRY', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインダック&ライス', abbr: 'セレクトプロテイン', caloriePer100g: 349, formCode: 'DRY', typeCode: 'OTHER_THERAPY' },
-  { code: 'SELECT_CHICKEN_WET', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインチキン&ライス', abbr: 'セレクトプロテイン', caloriePer100g: 103, formCode: 'WET', typeCode: 'OTHER_THERAPY' },
-  { code: 'STOMACH_CARE', makerCode: 'DRS_CARE', name: 'ストマックケア', abbr: 'ストマックケア', caloriePer100g: 350, formCode: 'DRY', typeCode: 'OTHER_THERAPY' },
+  { code: 'SELECT_DUCK_DRY', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインダック&ライス', abbr: 'セレプロD', caloriePer100g: 349, formCode: 'DRY', typeCode: 'OTHER_THERAPY',defaultAmountG :5 },
+  { code: 'SELECT_CHICKEN_WET', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインチキン&ライス', abbr: 'セレプロW', caloriePer100g: 103, formCode: 'WET', typeCode: 'OTHER_THERAPY' ,defaultAmountG :5},
+  { code: 'DIGESTIVE_SUPPORT_D', makerCode: 'ROYAL_CANIN', name: '消化器サポートD', abbr: '消化器サポD', caloriePer100g: 390, formCode: 'DRY', typeCode: 'OTHER_THERAPY' ,defaultAmountG :5},
+  { code: 'DIGESTIVE_SUPPORT_W', makerCode: 'ROYAL_CANIN', name: '消化器サポートW', abbr: '消化器サポW', caloriePer100g: 77, formCode: 'WET', typeCode: 'OTHER_THERAPY' ,defaultAmountG :5},
+  { code: 'RC_EARLY_RENAL_D', makerCode: 'ROYAL_CANIN', name: 'RC早期腎臓サポートドライ', abbr: 'RC早腎サD', caloriePer100g: 381, formCode: 'DRY', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5},
+  { code: 'RC_EARLY_RENAL_W', makerCode: 'ROYAL_CANIN', name: 'RC早期腎臓サポートウェット', abbr: 'RC早腎サW', caloriePer100g: 104, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5},
+  { code: 'RC_RENAL_FISH_W', makerCode: 'ROYAL_CANIN', name: 'RC腎サポフィッシュW', abbr: 'RC腎魚W', caloriePer100g: 102, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5},
+  { code: 'RENAL_LIQUID', makerCode: 'ROYAL_CANIN', name: '腎臓サポートリキッド', abbr: '腎リキッド', caloriePer100g: 108, formCode: 'LIQUID', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5},
+
+  { code: 'STOMACH_CARE', makerCode: 'DRS_CARE', name: 'ストマックケア', abbr: 'ストケア', caloriePer100g: 350, formCode: 'DRY', typeCode: 'OTHER_THERAPY',defaultAmountG :5 },
+  { code: 'DRS_FISH_W', makerCode: 'DRS_CARE', name: 'ドクターズケアキドニーケアフィッシュW', abbr: 'Drs魚W', caloriePer100g: 128, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5, memo:'パウチ'},
+  { code: 'DRS_CHICKEN_W', makerCode: 'DRS_CARE', name: 'ドクターズケアキドニーケアチキンW', abbr: 'Drs鶏W', caloriePer100g: 131, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5, memo:'パウチ'},
+  { code: 'DRS_FISH_D', makerCode: 'DRS_CARE', name: 'ドクターズケアキドニーケアフィッシュD', abbr: 'Drs魚D', caloriePer100g: 425, formCode: 'DRY', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5},
+
+  { code: 'BIOME', makerCode: 'HILLS', name: '腸内バイオーム', abbr: '腸バイオ', caloriePer100g: 377, formCode: 'DRY', typeCode: 'OTHER_THERAPY' ,defaultAmountG :5},
+  { code: 'ID_WET', makerCode: 'HILLS', name: 'i/d W', abbr: 'i/d W', caloriePer100g: 113 , formCode: 'WET', typeCode: 'OTHER_THERAPY' ,defaultAmountG :5},
+  { code: 'HLS_EARLY_RENAL', makerCode: 'HILLS', name: 'KD早期アシストドライ', abbr: 'KD早腎D', caloriePer100g: 420, formCode: 'DRY', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5},
+  { code: 'HLS_RENAL_SALMON_W', makerCode: 'HILLS', name: '腎臓ケアサーモンW', abbr: '腎鮭W', caloriePer100g: 98, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5, memo:'パウチ'},
+  { code: 'HLS_RENAL_CHICKEN_W', makerCode: 'HILLS', name: '腎臓ケアチキンW', abbr: '腎鶏W', caloriePer100g: 89, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5 , memo:'パウチ'},
+  { code: 'GUT_HEALTH_SUPPORT', makerCode: 'HILLS', name: '腸の健康サポート', abbr: '腸健康', caloriePer100g: 87, formCode: 'WET', typeCode: 'GENERAL_NUTRITION' ,defaultAmountG :5, memo:'パウチ'},
+  { code: 'HLS_TUNA_STEW_W', makerCode: 'HILLS', name: 'ツナシチュー', abbr: 'ツナシチュー', caloriePer100g: 95, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5, memo:''},
+  { code: 'HLS_CHICKEN_STEW_W', makerCode: 'HILLS', name: '鶏シチュー缶', abbr: '鶏シチュー缶', caloriePer100g: 87, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5, memo:''},
+  { code: 'HLS_TUNA_W', makerCode: 'HILLS', name: 'ツナ缶', abbr: 'ツナ缶', caloriePer100g: 112, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5, memo:''},
+  { code: 'HLS_CHICKEN_W', makerCode: 'HILLS', name: '鶏缶', abbr: '鶏缶', caloriePer100g: 117, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5, memo:''},
+
+  { code: 'PURINA_RENAL_W', makerCode: 'PURINA', name: 'ピュリナ腎臓ケアW', abbr: 'P腎W', caloriePer100g: 105, formCode: 'WET', typeCode: 'RENAL_THERAPY' ,defaultAmountG :5},
+  { code: 'PURINA_HYDRA', makerCode: 'PURINA', name: 'ハイドラケア', abbr: 'ハイドラケア', caloriePer100g: 22, formCode: 'LIQUID', typeCode: 'GENERAL_FOOD' ,defaultAmountG :75},
+  { code: 'LOWFAT_LIQUID', makerCode: 'HAVEST', name: '低脂肪リキッド', abbr: '低脂肪リキッド', caloriePer100g: 110 , formCode: 'LIQUID', typeCode: 'OTHER_THERAPY',defaultAmountG :20},
+  { code: 'QUESTION_WET50', makerCode: 'UNKNOWN', name: '謎ウェット50', abbr: '謎W50', caloriePer100g: 50, formCode: 'WET', typeCode: 'GENERAL_FOOD' ,defaultAmountG :5},
+  { code: 'QUESTION_WET60', makerCode: 'UNKNOWN', name: '謎ウェット60', abbr: '謎W60', caloriePer100g: 60, formCode: 'WET', typeCode: 'GENERAL_FOOD' ,defaultAmountG :5},
+  { code: 'QUESTION_WET90', makerCode: 'UNKNOWN', name: '謎ウェット90', abbr: '謎W90', caloriePer100g: 90, formCode: 'WET', typeCode: 'GENERAL_FOOD' ,defaultAmountG :5},
+  { code: 'ENERGY_TULE', makerCode: 'INABA', name: '腎臓エネルギーチュール', abbr: '腎臓エネちゅーる', caloriePer100g: 100 , formCode: 'LIQUID_TREAT', typeCode: 'RENAL_THERAPY',defaultAmountG :14},
+  { code: 'AIM_TREATS', makerCode: 'OTHER', name: 'AIMおやつ', abbr: 'AIMおやつ', caloriePer100g: 384 , formCode: 'TREAT', typeCode: 'TREAT',defaultAmountG :5},
+
 ];
 
 // ----- サプリ・投薬マスタ -----
@@ -100,9 +136,15 @@ export const initialMedicineMaster = [
   { code: 'REMERON', name: 'レメロン', kindFlag: 'DRUG', defaultDose: 1.8, unitCode: 'MG', effectCode: 'APPETITE_STIMULATION', memo: '3日に1回or頓服' },
   { code: 'DIABUSTER', name: 'ディアバスター', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_DIARRHEAL', memo: '1日に2回or頓服' },
   { code: 'PRONAMIDE', name: 'プロナミド', abbr: 'プロナミド', kindFlag: 'DRUG', defaultDose: 0.5, unitCode: 'TABLET', effectCode: 'ANTI_EMETIC', memo: '1日2回 1/2錠（カレンダー記載の「プロアミド」は同一薬の表記ゆれ）' },
+  { code: 'RINGERS', name: '点滴', abbr: '点滴', kindFlag: 'DRUG', defaultDose: 200, unitCode: 'ML', effectCode: 'ANTI_EMETIC', memo: 'リンゲル液' },
+  { code: 'MOEGI_OIL', name: 'モエギオイル25mg', abbr: 'モエギオイル', kindFlag: 'SUPLI', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_INFLAMMATORY', memo: 'DHCのやつ' },
 ];
 
 // ----- レシピマスタ（複数の餌を混ぜて与える場合のみ登録。単一の餌はそのまま餌マスタから選べます） -----
-// 例: { code: 'R001', name: 'いつものブレンド', components: [{ foodCode: 'F001', ratio: 6 }, { foodCode: 'F002', ratio: 4 }], memo: '' },
+// 例: { code: 'R001', name: 'いつものブレンド', components: [{ foodCode: 'F001', ratio: 6 }, { foodCode: 'F002', ratio: 4 }], defaultAmountG: 5,memo: '' },
 export const initialRecipeMaster = [
+   { code: 'RC_EARLY_RENAL_BIOME', name: '早腎サ腸バイオ', components: [{ foodCode: 'BIOME', ratio: 5 }, { foodCode: 'RC_EARLY_RENAL_D', ratio: 5 }], defaultAmountG: 5 ,memo: '' },
+   { code: 'RC_HLS_EARLY_RENAL', name: '早腎KD', components: [{ foodCode: 'HLS_EARLY_RENAL', ratio: 5 }, { foodCode: 'RC_EARLY_RENAL_D', ratio: 5 }], defaultAmountG: 5 ,memo: '' },
+   { code: 'DIGESTIVE_SUPPORT_LIQUID', name: '消化器リキッド', components: [{ foodCode: 'DIGESTIVE_SUPPORT_W', ratio: 6 }, { foodCode: 'RENAL_LIQUID', ratio: 4 }], defaultAmountG: 5 ,memo: '' },
+   { code: 'SELECT_CHICKEN_LIQUID', name: 'セレプロリキッド', components: [{ foodCode: 'SELECT_CHICKEN_WET', ratio: 6 }, { foodCode: 'RENAL_LIQUID', ratio: 4 }], defaultAmountG: 5 ,memo: '' },
 ];

@@ -1,5 +1,5 @@
 import { get, put, remove, getByIndex } from './db.js';
-import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml, addDaysStr } from './utils.js';
+import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml, addDaysStr, formatDisplayTime } from './utils.js';
 import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY, FOOD_FORM_CATEGORY, FOOD_TYPE_CATEGORY, MAKER_CATEGORY } from './dashboard.js';
 
 const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
@@ -117,7 +117,7 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
       : (e.eatenAmount != null ? `${e.eatenAmount}g` : '-');
     const calorieText = e.kind === 'SERVE' ? '-' : (e.calorie || 0);
     return `<tr>
-      <td>${escapeHtml(timeToHHMM(e.time))}</td>
+      <td>${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))}</td>
       <td>${kindLabel}</td>
       <td>${escapeHtml(src.abbr)}</td>
       <td>${amountText}</td>
@@ -359,7 +359,7 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
     const m = allMedicines.find(x => x.code === e.medicineCode);
     const doseText = e.dose != null ? `${e.dose}${unitName(m ? m.unitCode : '')}` : '-';
     return `<tr>
-      <td>${escapeHtml(timeToHHMM(e.time))}</td>
+      <td>${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))}</td>
       <td>${escapeHtml(m ? abbrOrName(m) : e.medicineCode)}</td>
       <td>${escapeHtml(m ? effectName(m.effectCode) : '-')}</td>
       <td>${escapeHtml(doseText)}</td>
@@ -508,7 +508,7 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
   }
 
   const rowsHtml = entries.map(e => `<tr>
-    <td>${escapeHtml(e.time)}</td>
+    <td>${escapeHtml(formatDisplayTime(e.time))}</td>
     <td>${escapeHtml(stateNames(e))}</td>
     <td>${escapeHtml(e.memo || '-')}</td>
     <td><button class="btn-tiny danger" data-del-excretion="${e.id}">削除</button></td>
@@ -558,7 +558,7 @@ async function renderMemoSection(host, cat, state, refreshCalendar) {
   const entries = (await getByIndex('memoLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
   const rowsHtml = entries.map(e => `<tr>
-    <td>${escapeHtml(e.time)}</td>
+    <td>${escapeHtml(formatDisplayTime(e.time))}</td>
     <td>${escapeHtml(e.memo || '-')}</td>
     <td><button class="btn-tiny danger" data-del-memo="${e.id}">削除</button></td>
   </tr>`).join('');
@@ -634,23 +634,23 @@ async function buildDailyLogRowsHtml(cat, state) {
       ? (e.providedAmount != null ? `${e.providedAmount}g` : '')
       : (e.eatenAmount != null ? `${e.eatenAmount}g` : '');
     const calPart = e.kind === 'SERVE' ? '' : ` 🔥${e.calorie || 0}`;
-    rows.push({ time: e.time, html: `<div class="daily-log-row">🍴${escapeHtml(timeToHHMM(e.time))} ${kindLabel} ${escapeHtml(src.abbr)}${amount ? ' ' + amount : ''}${calPart} ${memoFlagHtml(e.memo)}</div>` });
+    rows.push({ time: e.time, html: `<div class="daily-log-row">🍴${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${kindLabel} ${escapeHtml(src.abbr)}${amount ? ' ' + amount : ''}${calPart} ${memoFlagHtml(e.memo)}</div>` });
   });
 
   medRows.forEach(e => {
     const m = allMedicines.find(x => x.code === e.medicineCode);
     const doseText = e.dose != null ? `${e.dose}${unitName(m ? m.unitCode : '')}` : '';
-    rows.push({ time: e.time, html: `<div class="daily-log-row">💊${escapeHtml(timeToHHMM(e.time))} ${escapeHtml(m ? abbrOrName(m) : e.medicineCode)}${doseText ? ' ' + doseText : ''} ${memoFlagHtml(e.memo)}</div>` });
+    rows.push({ time: e.time, html: `<div class="daily-log-row">💊${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(m ? abbrOrName(m) : e.medicineCode)}${doseText ? ' ' + doseText : ''} ${memoFlagHtml(e.memo)}</div>` });
   });
 
   excRows.forEach(e => {
     const icon = e.type === 'VOMIT' ? '🤮' : '💩';
     const statesList = (e.type === 'VOMIT' ? vomitStates : stoolStates).filter(s => s.code !== '');
-    rows.push({ time: e.time, html: `<div class="daily-log-row">${icon}${escapeHtml(timeToHHMM(e.time))} ${escapeHtml(stateNamesFor(e, statesList))} ${memoFlagHtml(e.memo)}</div>` });
+    rows.push({ time: e.time, html: `<div class="daily-log-row">${icon}${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(stateNamesFor(e, statesList))} ${memoFlagHtml(e.memo)}</div>` });
   });
 
   memoRows.forEach(e => {
-    rows.push({ time: e.time, html: `<div class="daily-log-row">📝${escapeHtml(timeToHHMM(e.time))} ${escapeHtml(e.memo || '')}</div>` });
+    rows.push({ time: e.time, html: `<div class="daily-log-row">📝${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(e.memo || '')}</div>` });
   });
 
   rows.sort((a, b) => (a.time || '').localeCompare(b.time || ''));

@@ -77,6 +77,22 @@ export function timeToHHMM(timeStr) {
   return timeStr.replace(':', '');
 }
 
+// 内部保存用の時刻文字列を表示用に正規化する。
+// ソート順を保つために24時以降の延長表記（26:00など、日をまたいだ深夜の記録）や
+// 時刻不明の「夜間」を表す擬似時刻（99:00など、90時以降）を使うことがあるため、
+// 表示時はここで通常の時刻表記や「夜間」ラベルに変換する。
+// 例: "26:00" → "02:00" ／ "99:00" → "夜間" ／ "14:30" → "14:30"（そのまま）
+export function formatDisplayTime(timeStr) {
+  if (!timeStr) return '';
+  const m = String(timeStr).match(/^(\d{1,3}):(\d{1,2})$/);
+  if (!m) return timeStr;
+  let h = Number(m[1]);
+  const min = String(m[2]).padStart(2, '0');
+  if (h >= 90) return '夜間';
+  if (h >= 24) h -= 24;
+  return `${String(h).padStart(2, '0')}:${min}`;
+}
+
 // マスタ行から表示用の略称を取得（未設定なら名称、なければ空文字）
 export function abbrOrName(entity) {
   if (!entity) return '';
