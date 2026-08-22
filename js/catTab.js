@@ -1,6 +1,6 @@
 import { get, put, remove, getByIndex } from './db.js';
 import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes } from './utils.js';
-import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY } from './dashboard.js';
+import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY, FOOD_FORM_CATEGORY, FOOD_TYPE_CATEGORY, MAKER_CATEGORY } from './dashboard.js';
 
 const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
 
@@ -28,10 +28,6 @@ export async function renderCatTab(container, catCode) {
 
   const navHtml = SECTIONS.map(s => `<button class="icon-nav-btn ${state.activeSection === s.key ? 'active' : ''}" data-section="${s.key}" title="${s.title}">${s.icon}</button>`).join('');
 
-  const dailyRowsForDate = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
-  const dailyForDate = dailyRowsForDate[0] || null;
-  const isInvalidDay = !!(dailyForDate && dailyForDate.invalid);
-
   container.innerHTML = `
     <div class="cat-header">
       <h2>${escapeHtml(cat.name)}</h2>
@@ -40,7 +36,6 @@ export async function renderCatTab(container, catCode) {
         ${state.date !== todayStr() ? '<button id="backToday" class="btn-tiny">今日に戻る</button>' : ''}
       </div>
     </div>
-    <label class="invalid-day-toggle"><input type="checkbox" id="invalidDayChk" ${isInvalidDay ? 'checked' : ''}> この日は記録なし（データ無効）にする</label>
     <div class="icon-nav">${navHtml}</div>
     <div id="sectionHost"></div>
     <div id="calendarSection"></div>
@@ -59,15 +54,6 @@ export async function renderCatTab(container, catCode) {
 
   const calHost = container.querySelector('#calendarSection');
   const refreshCalendar = () => renderCalendarSection(calHost, cat, state, container);
-
-  container.querySelector('#invalidDayChk').addEventListener('change', async (ev) => {
-    const currentRows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
-    const currentExisting = currentRows[0] || null;
-    const data = currentExisting ? { ...currentExisting } : { catCode: cat.code, date: state.date };
-    data.invalid = ev.target.checked;
-    await put('dailyLog', data);
-    await refreshCalendar();
-  });
 
   const sectionHost = container.querySelector('#sectionHost');
   if (state.activeSection === 'feeding') await renderFeedingSection(sectionHost, cat, state, refreshCalendar);
@@ -97,18 +83,16 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   const { getAll } = await import('./db.js');
   const allFoods = await getAll('foodMaster');
   const allRecipes = await getAll('recipeMaster');
-  const candidateCodes = (cat.foodCandidates && cat.foodCandidates.length > 0) ? cat.foodCandidates : allFoods.map(f => f.code);
-  const candidates = allFoods.filter(f => candidateCodes.includes(f.code));
+  const makers = (await getByIndex('codeMaster', 'byCategory', MAKER_CATEGORY)).filter(c => c.code !== '');
+  const forms = (await getByIndex('codeMaster', 'byCategory', FOOD_FORM_CATEGORY)).filter(c => c.code !== '');
+  const types = (await getByIndex('codeMaster', 'byCategory', FOOD_TYPE_CATEGORY)).filter(c => c.code !== '');
 
   const entries = (await getByIndex('feedingLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
   const totalCal = Math.round(entries.reduce((s, e) => s + (e.calorie || 0), 0) * 10) / 10;
 
-  const recipeOptions = allRecipes.map(r => `<option value="R:${escapeHtml(r.code)}">${escapeHtml(r.name)}</option>`).join('');
-  const foodOptions = candidates.map(f => `<option value="F:${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
-  let sourceOptionsHtml = '';
-  if (allRecipes.length) sourceOptionsHtml += `<optgroup label="レシピ">${recipeOptions}</optgroup>`;
-  if (candidates.length) sourceOptionsHtml += `<optgroup label="餌">${foodOptions}</optgroup>`;
-  if (!allRecipes.length && !candidates.length) sourceOptionsHtml = '<option value="">未登録です</option>';
+  const makerOptionsHtml = makers.map(m => `<option value="${escapeHtml(m.code)}">${escapeHtml(m.name)}</option>`).join('');
+  const formOptionsHtml = forms.map(f => `<option value="${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
+  const typeOptionsHtml = types.map(t => `<option value="${escapeHtml(t.code)}">${escapeHtml(t.name)}</option>`).join('');
 
   const rowsHtml = entries.map(e => {
     const src = resolveFeedSource(e, allFoods, allRecipes);
@@ -142,7 +126,13 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
           </select>
         </div>
         <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="feedTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
-        <div class="field"><label>餌・レシピ</label><select id="feedSource">${sourceOptionsHtml}</select></div>
+        <div class="feed-filter">
+          <input id="feedSearch" type="text" placeholder="餌名で検索">
+          <select id="filterMaker"><option value="">メーカー(すべて)</option>${makerOptionsHtml}</select>
+          <select id="filterForm"><option value="">形態(すべて)</option>${formOptionsHtml}</select>
+          <select id="filterType"><option value="">種類(すべて)</option>${typeOptionsHtml}</select>
+        </div>
+        <div class="field"><label>餌・レシピ</label><select id="feedSource"></select></div>
         <div class="field"><label id="feedProvidedLabel">提供量(g)</label><input id="feedProvided" type="number" step="0.1"></div>
         <div class="field" id="feedEatenField"><label>摂取量(g)</label><input id="feedEaten" type="number" step="0.1"></div>
         <div class="field"><label>メモ</label><input id="feedMemo"></div>
@@ -152,6 +142,10 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   `;
 
   const sourceSelect = host.querySelector('#feedSource');
+  const searchInput = host.querySelector('#feedSearch');
+  const filterMaker = host.querySelector('#filterMaker');
+  const filterForm = host.querySelector('#filterForm');
+  const filterType = host.querySelector('#filterType');
   const providedInput = host.querySelector('#feedProvided');
   const eatenInput = host.querySelector('#feedEaten');
   const eatenField = host.querySelector('#feedEatenField');
@@ -160,10 +154,52 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   const timeInput = host.querySelector('#feedTime');
   const memoInput = host.querySelector('#feedMemo');
 
+  function getFilteredFoods() {
+    const q = (searchInput.value || '').trim().toLowerCase();
+    return allFoods.filter(f => {
+      if (filterMaker.value && f.makerCode !== filterMaker.value) return false;
+      if (filterForm.value && f.formCode !== filterForm.value) return false;
+      if (filterType.value && f.typeCode !== filterType.value) return false;
+      if (q && !(f.name || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+  function getFilteredRecipes() {
+    const q = (searchInput.value || '').trim().toLowerCase();
+    if (!q) return allRecipes;
+    return allRecipes.filter(r => (r.name || '').toLowerCase().includes(q));
+  }
+  function buildSourceOptionsHtml() {
+    const foods = getFilteredFoods();
+    const recipes = getFilteredRecipes();
+    const recipeOptions = recipes.map(r => `<option value="R:${escapeHtml(r.code)}">${escapeHtml(r.name)}</option>`).join('');
+    const foodOptions = foods.map(f => `<option value="F:${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
+    let html = '';
+    if (recipes.length) html += `<optgroup label="レシピ">${recipeOptions}</optgroup>`;
+    if (foods.length) html += `<optgroup label="餌">${foodOptions}</optgroup>`;
+    if (!recipes.length && !foods.length) html = '<option value="">該当する餌・レシピがありません</option>';
+    return html;
+  }
+  function rebuildSourceSelect(preserveValue) {
+    const prev = preserveValue !== undefined ? preserveValue : sourceSelect.value;
+    sourceSelect.innerHTML = buildSourceOptionsHtml();
+    if (prev && Array.from(sourceSelect.options).some(o => o.value === prev)) {
+      sourceSelect.value = prev;
+    }
+  }
+
   const lastSelKey = `catHealth:lastFeedSelection:${cat.code}`;
   const lastSel = localStorage.getItem(lastSelKey);
-  if (lastSel && Array.from(sourceSelect.options).some(o => o.value === lastSel)) {
-    sourceSelect.value = lastSel;
+  rebuildSourceSelect(null);
+  {
+    const optionValues = Array.from(sourceSelect.options).map(o => o.value);
+    if (lastSel && optionValues.includes(lastSel)) {
+      sourceSelect.value = lastSel;
+    } else if (allFoods.length && optionValues.includes(`F:${allFoods[0].code}`)) {
+      sourceSelect.value = `F:${allFoods[0].code}`;
+    } else if (allRecipes.length && optionValues.includes(`R:${allRecipes[0].code}`)) {
+      sourceSelect.value = `R:${allRecipes[0].code}`;
+    }
   }
 
   timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
@@ -179,6 +215,9 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   }
   sourceSelect.addEventListener('change', applyDefault);
   applyDefault();
+
+  searchInput.addEventListener('input', () => { rebuildSourceSelect(); applyDefault(); });
+  [filterMaker, filterForm, filterType].forEach(sel => sel.addEventListener('change', () => { rebuildSourceSelect(); applyDefault(); }));
 
   function updateKindUI() {
     const isIntake = kindSelect.value === 'INTAKE';
@@ -275,8 +314,6 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
     return eff ? eff.name : '-';
   }
 
-  const medOptions = allMedicines.map(m => `<option value="${escapeHtml(m.code)}">${escapeHtml(m.name)}</option>`).join('');
-
   const rowsHtml = entries.map(e => {
     const m = allMedicines.find(x => x.code === e.medicineCode);
     const doseText = e.dose != null ? `${e.dose}${unitName(m ? m.unitCode : '')}` : '-';
@@ -296,7 +333,15 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
       <tbody>${rowsHtml || '<tr><td colspan="5" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
         <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="medTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
-        <div class="field"><label>サプリ・薬</label><select id="medSelect">${allMedicines.length ? medOptions : '<option value="">未登録です</option>'}</select></div>
+        <div class="feed-filter">
+          <input id="medSearch" type="text" placeholder="名前で検索">
+          <select id="filterKind">
+            <option value="">薬・サプリ(すべて)</option>
+            <option value="DRUG">薬</option>
+            <option value="SUPPLEMENT">サプリ</option>
+          </select>
+        </div>
+        <div class="field"><label>サプリ・薬</label><select id="medSelect"></select></div>
         <div class="field"><label id="medDoseLabel">用量</label><input id="medDose" type="number" step="0.01"></div>
         <button id="medSave" class="btn-primary">入力確定</button>
       </div>
@@ -304,18 +349,42 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
   `;
 
   const medSelect = host.querySelector('#medSelect');
+  const medSearch = host.querySelector('#medSearch');
+  const filterKind = host.querySelector('#filterKind');
   const doseInput = host.querySelector('#medDose');
   const doseLabel = host.querySelector('#medDoseLabel');
   const timeInput = host.querySelector('#medTime');
   timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
+
+  function getFilteredMedicines() {
+    const q = (medSearch.value || '').trim().toLowerCase();
+    return allMedicines.filter(m => {
+      if (filterKind.value && (m.kindFlag || 'DRUG') !== filterKind.value) return false;
+      if (q && !(m.name || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+  function rebuildMedSelect(preserveValue) {
+    const prev = preserveValue !== undefined ? preserveValue : medSelect.value;
+    const filtered = getFilteredMedicines();
+    const options = filtered.map(m => `<option value="${escapeHtml(m.code)}">${escapeHtml(m.name)}</option>`).join('');
+    medSelect.innerHTML = filtered.length ? options : '<option value="">該当するサプリ・薬がありません</option>';
+    if (prev && Array.from(medSelect.options).some(o => o.value === prev)) {
+      medSelect.value = prev;
+    }
+  }
+
   function applyDefaultDose() {
     const m = allMedicines.find(x => x.code === medSelect.value);
     if (m && m.defaultDose != null) doseInput.value = m.defaultDose;
     doseLabel.textContent = m ? `用量（${unitName(m.unitCode) || '単位未設定'}）` : '用量';
   }
   if (medSelect) {
-    medSelect.addEventListener('change', applyDefaultDose);
+    rebuildMedSelect(null);
     applyDefaultDose();
+    medSelect.addEventListener('change', applyDefaultDose);
+    medSearch.addEventListener('input', () => { rebuildMedSelect(); applyDefaultDose(); });
+    filterKind.addEventListener('change', () => { rebuildMedSelect(); applyDefaultDose(); });
   }
 
   host.querySelectorAll('[data-del-medicine-log]').forEach(btn => btn.addEventListener('click', async () => {
@@ -460,6 +529,7 @@ async function renderDailySection(host, cat, state, refreshCalendar) {
   const existing = rows[0] || null;
   const events = (await getByIndex('codeMaster', 'byCategory', DAILY_EVENT_CATEGORY)).filter(e => e.code !== '');
   const existingEvents = (existing && existing.events) || [];
+  const isInvalidDay = !!(existing && existing.invalid);
 
   const eventChecksHtml = events.map(e => {
     const checked = existingEvents.includes(e.code) ? 'checked' : '';
@@ -469,6 +539,7 @@ async function renderDailySection(host, cat, state, refreshCalendar) {
   host.innerHTML = `
     <div class="card">
       <div class="card-title">日々管理</div>
+      <label class="invalid-day-toggle"><input type="checkbox" id="invalidDayChk" ${isInvalidDay ? 'checked' : ''}> この日は記録なし（データ無効）にする</label>
       <div class="field"><label>体重(kg)</label><input id="dailyWeight" type="number" step="0.01" value="${existing && existing.weight != null ? existing.weight : ''}"></div>
       <div class="field"><label>尿量(ml)</label><input id="dailyUrine" type="number" step="1" value="${existing && existing.urineAmount != null ? existing.urineAmount : ''}"></div>
       <div class="field"><label>イベント</label><div class="chk-list">${eventChecksHtml || '<span class="muted">コードマスタの「日々のイベント」にコードを追加してください</span>'}</div></div>
@@ -476,6 +547,16 @@ async function renderDailySection(host, cat, state, refreshCalendar) {
       <button id="dailySave" class="btn-primary">保存</button>
     </div>
   `;
+
+  host.querySelector('#invalidDayChk').addEventListener('change', async (ev) => {
+    const currentRows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
+    const currentExisting = currentRows[0] || null;
+    const data = currentExisting ? { ...currentExisting } : { catCode: cat.code, date: state.date };
+    data.invalid = ev.target.checked;
+    await put('dailyLog', data);
+    if (refreshCalendar) await refreshCalendar();
+  });
+
   host.querySelector('#dailySave').addEventListener('click', async () => {
     const weightVal = host.querySelector('#dailyWeight').value;
     const urineVal = host.querySelector('#dailyUrine').value;

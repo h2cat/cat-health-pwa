@@ -1,5 +1,5 @@
 import { getAll, get, put, remove, getByIndex, clearStore, STORES } from './db.js';
-import { escapeHtml, el } from './utils.js';
+import { escapeHtml, el, parseCaloriePer100gInput } from './utils.js';
 import { initialCodeMaster, initialCatMaster, initialFoodMaster, initialMedicineMaster, initialRecipeMaster } from './initial-data.js';
 
 export const FOOD_FORM_CATEGORY = 'FOOD_FORM';
@@ -11,6 +11,8 @@ export const MED_UNIT_CATEGORY = 'MED_UNIT';
 export const MED_EFFECT_CATEGORY = 'MED_EFFECT';
 export const DAILY_EVENT_CATEGORY = 'DAILY_EVENT';
 
+let expandedCodeCategory = null; // コードマスタのアコーディオンで開いている大分類
+
 // 初回起動時／アップデート時のマスタ種seed
 // js/initial-data.js の内容のうち、「まだ登録されていないもの」だけを追加する。
 // 既にアプリ内で編集・削除したデータは上書きしない。
@@ -20,6 +22,18 @@ export async function seedDefaults() {
   await ensureFoodMaster(initialFoodMaster);
   await ensureMedicineMaster(initialMedicineMaster);
   await ensureRecipeMaster(initialRecipeMaster);
+  await migrateMedicineKindFlag();
+}
+
+// 薬・サプリのフラグ(kindFlag)未設定の既存データを「薬」に一括設定する（1回限りの移行処理）
+async function migrateMedicineKindFlag() {
+  const medicines = await getAll('medicineMaster');
+  for (const m of medicines) {
+    if (!m.kindFlag) {
+      m.kindFlag = 'DRUG';
+      await put('medicineMaster', m);
+    }
+  }
 }
 
 async function ensureCodeMaster(entries) {
@@ -109,25 +123,33 @@ async function renderCodeMaster(content) {
   Object.keys(categories).sort().forEach(cat => {
     const c = categories[cat];
     const headerName = c.header ? c.header.name : cat;
-    html += `<div class="card">
-      <div class="card-title">
-        ${escapeHtml(headerName)} <span class="muted">(${escapeHtml(cat)})</span>
-        <button class="btn-tiny danger" data-del-header="${escapeHtml(cat)}">大分類削除</button>
-      </div>
-      <table class="tbl"><tbody>`;
-    c.items.forEach(item => {
-      html += `<tr>
-        <td>${escapeHtml(item.code)}</td>
-        <td>${escapeHtml(item.name)}</td>
-        <td class="actions">
-          <button class="btn-tiny" data-edit-code="${item.id}">編集</button>
-          <button class="btn-tiny danger" data-del-code="${item.id}">削除</button>
-        </td>
-      </tr>`;
-    });
-    html += `</tbody></table>
-      <button class="btn-small" data-add-code="${escapeHtml(cat)}">＋コード追加</button>
-    </div>`;
+    const isOpen = expandedCodeCategory === cat;
+    html += `<div class="card accordion-card">
+      <button class="accordion-header" data-toggle-category="${escapeHtml(cat)}">
+        <span>${escapeHtml(headerName)} <span class="muted">(${escapeHtml(cat)}・${c.items.length}件)</span></span>
+        <span class="accordion-arrow">${isOpen ? '▼' : '▶'}</span>
+      </button>`;
+    if (isOpen) {
+      html += `<div class="accordion-body">
+        <table class="tbl"><tbody>`;
+      c.items.forEach(item => {
+        html += `<tr>
+          <td>${escapeHtml(item.code)}</td>
+          <td>${escapeHtml(item.name)}</td>
+          <td class="actions">
+            <button class="btn-tiny" data-edit-code="${item.id}">編集</button>
+            <button class="btn-tiny danger" data-del-code="${item.id}">削除</button>
+          </td>
+        </tr>`;
+      });
+      html += `</tbody></table>
+        <div class="actions">
+          <button class="btn-small" data-add-code="${escapeHtml(cat)}">＋コード追加</button>
+          <button class="btn-small danger" data-del-header="${escapeHtml(cat)}">大分類削除</button>
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
   });
   html += `</div>`;
   content.innerHTML = html;
@@ -139,8 +161,15 @@ async function renderCodeMaster(content) {
     const name = prompt('大分類名称を入力してください');
     if (!name) return;
     await put('codeMaster', { category: catKey, code: '', name });
+    expandedCodeCategory = catKey;
     renderCodeMaster(content);
   });
+
+  content.querySelectorAll('[data-toggle-category]').forEach(btn => btn.addEventListener('click', () => {
+    const cat = btn.dataset.toggleCategory;
+    expandedCodeCategory = expandedCodeCategory === cat ? null : cat;
+    renderCodeMaster(content);
+  }));
 
   content.querySelectorAll('[data-add-code]').forEach(btn => btn.addEventListener('click', async () => {
     const cat = btn.dataset.addCode;
@@ -188,6 +217,7 @@ async function renderCodeMaster(content) {
     if (!c.header) return;
     if (!confirm(`大分類「${c.header.name}」を削除しますか？`)) return;
     await remove('codeMaster', c.header.id);
+    if (expandedCodeCategory === cat) expandedCodeCategory = null;
     renderCodeMaster(content);
   }));
 }
@@ -195,7 +225,6 @@ async function renderCodeMaster(content) {
 // ===== 猫マスタ =====
 async function renderCatMaster(content, callbacks) {
   const cats = await getAll('catMaster');
-  const foods = await getAll('foodMaster');
 
   let html = `<div class="panel">
     <div class="panel-header"><h3>猫マスタ</h3></div>`;
@@ -204,10 +233,6 @@ async function renderCatMaster(content, callbacks) {
       <div class="card-title">${escapeHtml(cat.name)} <span class="muted">(${escapeHtml(cat.code)})</span></div>
       <div class="kv">生年月日: ${escapeHtml(cat.birthDate || '-')}</div>
       <div class="kv">性別: ${escapeHtml(cat.sex || '-')}</div>
-      <div class="kv">餌候補: ${(cat.foodCandidates || []).map(fc => {
-        const f = foods.find(x => x.code === fc);
-        return escapeHtml(f ? f.name : fc);
-      }).join('、') || '-'}</div>
       <div class="kv">メモ: ${escapeHtml(cat.memo || '-')}</div>
       <div class="actions">
         <button class="btn-small" data-edit-cat="${escapeHtml(cat.code)}">編集</button>
@@ -221,14 +246,14 @@ async function renderCatMaster(content, callbacks) {
   </div></div>`;
   content.innerHTML = html;
 
-  renderCatForm(content.querySelector('#catForm'), null, foods, callbacks, () => renderCatMaster(content, callbacks));
+  renderCatForm(content.querySelector('#catForm'), null, callbacks, () => renderCatMaster(content, callbacks));
 
   content.querySelectorAll('[data-edit-cat]').forEach(btn => btn.addEventListener('click', async () => {
     const code = btn.dataset.editCat;
     const cat = await get('catMaster', code);
     const formHost = el(`<div class="card"><div class="card-title">猫編集: ${escapeHtml(cat.name)}</div><div></div></div>`);
     btn.closest('.card').replaceWith(formHost);
-    renderCatForm(formHost.querySelector('div:last-child'), cat, foods, callbacks, () => renderCatMaster(content, callbacks));
+    renderCatForm(formHost.querySelector('div:last-child'), cat, callbacks, () => renderCatMaster(content, callbacks));
   }));
 
   content.querySelectorAll('[data-del-cat]').forEach(btn => btn.addEventListener('click', async () => {
@@ -249,12 +274,8 @@ async function renderCatMaster(content, callbacks) {
   }));
 }
 
-function renderCatForm(host, existing, foods, callbacks, onSaved) {
+function renderCatForm(host, existing, callbacks, onSaved) {
   const isEdit = !!existing;
-  const foodOptions = foods.map(f => {
-    const checked = existing && existing.foodCandidates && existing.foodCandidates.includes(f.code) ? 'checked' : '';
-    return `<label class="chk"><input type="checkbox" value="${escapeHtml(f.code)}" ${checked}> ${escapeHtml(f.name)}</label>`;
-  }).join('');
 
   host.innerHTML = `
     <div class="field"><label>コード</label><input id="f_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
@@ -267,7 +288,6 @@ function renderCatForm(host, existing, foods, callbacks, onSaved) {
         <option value="メス" ${isEdit && existing.sex === 'メス' ? 'selected' : ''}>メス</option>
       </select>
     </div>
-    <div class="field"><label>餌候補</label><div class="chk-list">${foodOptions || '<span class="muted">餌マスタが未登録です</span>'}</div></div>
     <div class="field"><label>メモ</label><textarea id="f_memo">${isEdit ? escapeHtml(existing.memo || '') : ''}</textarea></div>
     <button id="f_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
   `;
@@ -280,13 +300,11 @@ function renderCatForm(host, existing, foods, callbacks, onSaved) {
       const existingCat = await get('catMaster', code);
       if (existingCat) { alert('既に存在するコードです'); return; }
     }
-    const foodCandidates = Array.from(host.querySelectorAll('.chk-list input:checked')).map(i => i.value);
     const catData = {
       code,
       name,
       birthDate: host.querySelector('#f_birth').value,
       sex: host.querySelector('#f_sex').value,
-      foodCandidates,
       memo: host.querySelector('#f_memo').value
     };
     await put('catMaster', catData);
@@ -344,11 +362,9 @@ async function renderFoodMaster(content) {
     const code = btn.dataset.delFood;
     const feeding = await getAll('feedingLog');
     const usedInFeeding = feeding.some(x => x.foodCode === code || x.sourceCode === code || (x.breakdown || []).some(b => b.foodCode === code));
-    const cats = await getAll('catMaster');
-    const usedInCats = cats.some(c => (c.foodCandidates || []).includes(code));
     const recipes = await getAll('recipeMaster');
     const usedInRecipes = recipes.some(r => (r.components || []).some(c => c.foodCode === code));
-    if (usedInFeeding || usedInCats || usedInRecipes) { alert('この餌は使用中のため削除できません'); return; }
+    if (usedInFeeding || usedInRecipes) { alert('この餌は使用中のため削除できません'); return; }
     if (!confirm('この餌を削除しますか？')) return;
     await remove('foodMaster', code);
     renderFoodMaster(content);
@@ -364,12 +380,27 @@ function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSave
     <div class="field"><label>コード</label><input id="ff_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
     <div class="field"><label>メーカー</label><select id="ff_maker"><option value="">未選択</option>${makerOptions || ''}</select>${makerCodes.length === 0 ? '<span class="muted">コードマスタの「メーカー」にコードを追加してください</span>' : ''}</div>
     <div class="field"><label>名称</label><input id="ff_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
-    <div class="field"><label>100gあたりカロリー(kcal)</label><input id="ff_cal" type="number" step="0.1" value="${isEdit ? existing.caloriePer100g : ''}"></div>
+    <div class="field"><label>カロリー</label><input id="ff_cal" type="text" inputmode="decimal" placeholder="例: 350 または 75/85" value="${isEdit ? existing.caloriePer100g : ''}">
+      <span class="muted">100gあたりのkcal、または「小袋のkcal/内容量g」（例: 75/85）で入力可</span>
+      <span id="ff_cal_preview" class="muted"></span>
+    </div>
     <div class="field"><label>形態</label><select id="ff_form"><option value="">未選択</option>${options}</select></div>
     <div class="field"><label>種類</label><select id="ff_type"><option value="">未選択</option>${typeOptions}</select></div>
     <div class="field"><label>給仕デフォルト量(g)</label><input id="ff_default" type="number" step="0.1" value="${isEdit ? existing.defaultAmountG : ''}"></div>
     <button id="ff_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
   `;
+
+  const calInput = host.querySelector('#ff_cal');
+  const calPreview = host.querySelector('#ff_cal_preview');
+  function updateCalPreview() {
+    const raw = calInput.value.trim();
+    if (!raw) { calPreview.textContent = ''; return; }
+    const per100g = parseCaloriePer100gInput(raw);
+    calPreview.textContent = raw.includes('/') ? `→ 100gあたり ${per100g} kcal` : '';
+  }
+  calInput.addEventListener('input', updateCalPreview);
+  updateCalPreview();
+
   host.querySelector('#ff_save').addEventListener('click', async () => {
     const code = host.querySelector('#ff_code').value.trim();
     const name = host.querySelector('#ff_name').value.trim();
@@ -382,7 +413,7 @@ function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSave
       code,
       makerCode: host.querySelector('#ff_maker').value,
       name,
-      caloriePer100g: Number(host.querySelector('#ff_cal').value) || 0,
+      caloriePer100g: parseCaloriePer100gInput(calInput.value),
       formCode: host.querySelector('#ff_form').value,
       typeCode: host.querySelector('#ff_type').value,
       defaultAmountG: Number(host.querySelector('#ff_default').value) || 0
@@ -501,8 +532,9 @@ async function renderMedicineMaster(content) {
   medicines.forEach(m => {
     const unitName = units.find(u => u.code === m.unitCode);
     const effectName = effects.find(e => e.code === m.effectCode);
+    const kindLabel = m.kindFlag === 'SUPPLEMENT' ? 'サプリ' : '薬';
     html += `<div class="card">
-      <div class="card-title">${escapeHtml(m.name)} <span class="muted">(${escapeHtml(m.code)})</span></div>
+      <div class="card-title">${escapeHtml(m.name)} <span class="muted">(${escapeHtml(m.code)}・${escapeHtml(kindLabel)})</span></div>
       <div class="kv">デフォルト用量: ${m.defaultDose != null && m.defaultDose !== '' ? escapeHtml(m.defaultDose) + escapeHtml(unitName ? unitName.name : '') : '-'}</div>
       <div class="kv">効能: ${escapeHtml(effectName ? effectName.name : '-')}</div>
       <div class="kv">メモ: ${escapeHtml(m.memo || '-')}</div>
@@ -543,6 +575,12 @@ function renderMedicineForm(host, existing, units, effects, onSaved) {
   host.innerHTML = `
     <div class="field"><label>コード</label><input id="mm_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
     <div class="field"><label>名称</label><input id="mm_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>区分</label>
+      <select id="mm_kind">
+        <option value="DRUG" ${!isEdit || existing.kindFlag !== 'SUPPLEMENT' ? 'selected' : ''}>薬</option>
+        <option value="SUPPLEMENT" ${isEdit && existing.kindFlag === 'SUPPLEMENT' ? 'selected' : ''}>サプリ</option>
+      </select>
+    </div>
     <div class="field"><label>デフォルト用量</label><input id="mm_dose" type="number" step="0.01" value="${isEdit && existing.defaultDose != null ? existing.defaultDose : ''}"></div>
     <div class="field"><label>単位</label><select id="mm_unit"><option value="">未選択</option>${unitOptions}</select></div>
     <div class="field"><label>効能</label><select id="mm_effect"><option value="">未選択</option>${effectOptions}</select></div>
@@ -561,6 +599,7 @@ function renderMedicineForm(host, existing, units, effects, onSaved) {
     const data = {
       code,
       name,
+      kindFlag: host.querySelector('#mm_kind').value,
       defaultDose: doseVal === '' ? null : Number(doseVal),
       unitCode: host.querySelector('#mm_unit').value,
       effectCode: host.querySelector('#mm_effect').value,

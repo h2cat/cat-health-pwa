@@ -32,6 +32,23 @@ export function calcCalorie(caloriePer100g, gramsEaten) {
   return Math.round((c / 100) * g * 10) / 10;
 }
 
+// 餌マスタのカロリー入力を100gあたりのkcalに変換する。
+// "75/85" のような "kcal/内容量g" 形式なら (75/85)*100 に換算し、
+// 単純な数値ならそのまま100gあたりの値として扱う。
+export function parseCaloriePer100gInput(str) {
+  if (str === null || str === undefined) return 0;
+  const trimmed = String(str).trim();
+  if (!trimmed) return 0;
+  if (trimmed.includes('/')) {
+    const parts = trimmed.split('/');
+    const kcal = Number(parts[0]);
+    const grams = Number(parts[1]);
+    if (!kcal || !grams) return 0;
+    return Math.round((kcal / grams) * 100 * 100) / 100;
+  }
+  return Number(trimmed) || 0;
+}
+
 // "HH:MM" を10分単位に切り捨てる（例: 14:37 → 14:30）
 export function floorToTenMinutes(timeStr) {
   if (!timeStr) return timeStr;

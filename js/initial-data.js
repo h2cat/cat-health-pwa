@@ -7,9 +7,9 @@
 //
 // 注意:
 // - codeMaster の code: '' の行は「大分類名称」を表す特別な行です（削除しないこと）
-// - catMaster.foodCandidates は foodMaster の code を配列で指定します
 // - foodMaster.formCode / typeCode / makerCode は codeMaster (FOOD_FORM / FOOD_TYPE / MAKER) の code を指定します
 // - medicineMaster.unitCode / effectCode は codeMaster (MED_UNIT / MED_EFFECT) の code を指定します
+// - medicineMaster.kindFlag は 'DRUG'（薬）か 'SUPPLEMENT'（サプリ）のどちらかを指定します
 // - recipeMaster.components は foodMaster の code と比率(ratio)の組み合わせです（例: 餌A:餌B = 6:4）
 // - うんち・ゲロの状態、日々のイベントは複数選択できます（それぞれ stateCodes / events が配列）
 // ==========================================================================
@@ -70,7 +70,7 @@ export const initialCodeMaster = [
 ];
 
 // ----- 猫マスタ -----
-// 例: { code: 'CAT01', name: 'クロ', birthDate: '2020-04-01', sex: 'オス', foodCandidates: ['F001', 'F002'], memo: '腎臓療養中' },
+// 例: { code: 'CAT01', name: 'クロ', birthDate: '2020-04-01', sex: 'オス', memo: '腎臓療養中' },
 export const initialCatMaster = [
 ];
 
@@ -80,7 +80,7 @@ export const initialFoodMaster = [
 ];
 
 // ----- サプリ・投薬マスタ -----
-// 例: { code: 'M001', name: 'セレニア', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_EMETIC', memo: '朝晩' },
+// 例: { code: 'M001', name: 'セレニア', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_EMETIC', memo: '朝晩' },
 export const initialMedicineMaster = [
 ];
 
