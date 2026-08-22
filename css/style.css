@@ -265,6 +265,44 @@ button {
 }
 .cal-cell.selected.invalid-day .invalid-dot { color: #fff; }
 
+.memo-flag {
+  cursor: help;
+  font-size: 13px;
+}
+
+.editing-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #d8792f;
+  background: #fff3e6;
+  border: 1px solid #f0c896;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+
+.daily-log-list {
+  margin-top: 12px;
+  border-top: 1px dashed #eee;
+  padding-top: 8px;
+}
+.daily-log-row {
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f5f5f5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.daily-log-summary {
+  font-weight: bold;
+  color: #555;
+}
+
 .invalid-day-toggle {
   display: flex;
   align-items: center;

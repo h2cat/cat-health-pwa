@@ -334,6 +334,7 @@ async function renderFoodMaster(content) {
     const makerName = makerCodes.find(mc => mc.code === f.makerCode);
     html += `<div class="card">
       <div class="card-title">${escapeHtml(f.name)} <span class="muted">(${escapeHtml(f.code)})</span></div>
+      <div class="kv">略称: ${escapeHtml(f.abbr || '-')}</div>
       <div class="kv">メーカー: ${escapeHtml(makerName ? makerName.name : '-')}</div>
       <div class="kv">100gあたりカロリー: ${escapeHtml(f.caloriePer100g)} kcal</div>
       <div class="kv">形態: ${escapeHtml(formName ? formName.name : '-')}</div>
@@ -380,6 +381,7 @@ function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSave
     <div class="field"><label>コード</label><input id="ff_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
     <div class="field"><label>メーカー</label><select id="ff_maker"><option value="">未選択</option>${makerOptions || ''}</select>${makerCodes.length === 0 ? '<span class="muted">コードマスタの「メーカー」にコードを追加してください</span>' : ''}</div>
     <div class="field"><label>名称</label><input id="ff_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>略称（ログ表示用・任意）</label><input id="ff_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
     <div class="field"><label>カロリー</label><input id="ff_cal" type="text" inputmode="decimal" placeholder="例: 350 または 75/85" value="${isEdit ? existing.caloriePer100g : ''}">
       <span class="muted">100gあたりのkcal、または「小袋のkcal/内容量g」（例: 75/85）で入力可</span>
       <span id="ff_cal_preview" class="muted"></span>
@@ -413,6 +415,7 @@ function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSave
       code,
       makerCode: host.querySelector('#ff_maker').value,
       name,
+      abbr: host.querySelector('#ff_abbr').value.trim(),
       caloriePer100g: parseCaloriePer100gInput(calInput.value),
       formCode: host.querySelector('#ff_form').value,
       typeCode: host.querySelector('#ff_type').value,
@@ -444,6 +447,7 @@ async function renderRecipeMaster(content) {
   recipes.forEach(r => {
     html += `<div class="card">
       <div class="card-title">${escapeHtml(r.name)} <span class="muted">(${escapeHtml(r.code)})</span></div>
+      <div class="kv">略称: ${escapeHtml(r.abbr || '-')}</div>
       <div class="kv">配合: ${escapeHtml(componentsLabel(r.components)) || '-'}</div>
       <div class="kv">メモ: ${escapeHtml(r.memo || '-')}</div>
       <div class="actions">
@@ -492,6 +496,7 @@ function renderRecipeForm(host, existing, foods, onSaved) {
   host.innerHTML = `
     <div class="field"><label>コード</label><input id="rc_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
     <div class="field"><label>名称</label><input id="rc_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>略称（ログ表示用・任意）</label><input id="rc_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
     <div class="field"><label>配合する餌と比率（例: 餌A 6 / 餌B 4）</label>${rows || '<span class="muted">先に餌マスタを登録してください</span>'}</div>
     <div class="field"><label>メモ</label><input id="rc_memo" value="${isEdit ? escapeHtml(existing.memo || '') : ''}"></div>
     <button id="rc_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
@@ -513,7 +518,7 @@ function renderRecipeForm(host, existing, foods, onSaved) {
       components.push({ foodCode: chk.value, ratio });
     });
     if (components.length < 2) { alert('レシピは2種類以上の餌を選んでください（単一の餌は登録不要です）'); return; }
-    const data = { code, name, components, memo: host.querySelector('#rc_memo').value };
+    const data = { code, name, abbr: host.querySelector('#rc_abbr').value.trim(), components, memo: host.querySelector('#rc_memo').value };
     await put('recipeMaster', data);
     if (onSaved) onSaved();
     else {
@@ -535,6 +540,7 @@ async function renderMedicineMaster(content) {
     const kindLabel = m.kindFlag === 'SUPPLEMENT' ? 'サプリ' : '薬';
     html += `<div class="card">
       <div class="card-title">${escapeHtml(m.name)} <span class="muted">(${escapeHtml(m.code)}・${escapeHtml(kindLabel)})</span></div>
+      <div class="kv">略称: ${escapeHtml(m.abbr || '-')}</div>
       <div class="kv">デフォルト用量: ${m.defaultDose != null && m.defaultDose !== '' ? escapeHtml(m.defaultDose) + escapeHtml(unitName ? unitName.name : '') : '-'}</div>
       <div class="kv">効能: ${escapeHtml(effectName ? effectName.name : '-')}</div>
       <div class="kv">メモ: ${escapeHtml(m.memo || '-')}</div>
@@ -575,6 +581,7 @@ function renderMedicineForm(host, existing, units, effects, onSaved) {
   host.innerHTML = `
     <div class="field"><label>コード</label><input id="mm_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
     <div class="field"><label>名称</label><input id="mm_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>略称（ログ表示用・任意）</label><input id="mm_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
     <div class="field"><label>区分</label>
       <select id="mm_kind">
         <option value="DRUG" ${!isEdit || existing.kindFlag !== 'SUPPLEMENT' ? 'selected' : ''}>薬</option>
@@ -599,6 +606,7 @@ function renderMedicineForm(host, existing, units, effects, onSaved) {
     const data = {
       code,
       name,
+      abbr: host.querySelector('#mm_abbr').value.trim(),
       kindFlag: host.querySelector('#mm_kind').value,
       defaultDose: doseVal === '' ? null : Number(doseVal),
       unitCode: host.querySelector('#mm_unit').value,

@@ -62,3 +62,21 @@ export function floorToTenMinutes(timeStr) {
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
+
+// "HH:MM" を "HHMM" に変換する（例: 14:30 → 1430）
+export function timeToHHMM(timeStr) {
+  if (!timeStr) return '';
+  return timeStr.replace(':', '');
+}
+
+// マスタ行から表示用の略称を取得（未設定なら名称、なければ空文字）
+export function abbrOrName(entity) {
+  if (!entity) return '';
+  return entity.abbr || entity.name || '';
+}
+
+// メモの有無をアイコン(💬)＋ツールチップのHTMLにする。メモが無ければ空文字。
+export function memoFlagHtml(memo) {
+  if (!memo) return '';
+  return `<span class="memo-flag" title="${escapeHtml(memo)}">💬</span>`;
+}

@@ -1,5 +1,5 @@
 import { get, put, remove, getByIndex } from './db.js';
-import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes } from './utils.js';
+import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml } from './utils.js';
 import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY, FOOD_FORM_CATEGORY, FOOD_TYPE_CATEGORY, MAKER_CATEGORY } from './dashboard.js';
 
 const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
@@ -49,6 +49,8 @@ export async function renderCatTab(container, catCode) {
 
   container.querySelectorAll('.icon-nav-btn').forEach(btn => btn.addEventListener('click', () => {
     state.activeSection = btn.dataset.section;
+    state.editingFeedId = null;
+    state.editingMedId = null;
     renderCatTab(container, catCode);
   }));
 
@@ -70,13 +72,13 @@ export async function renderCatTab(container, catCode) {
 function resolveFeedSource(e, allFoods, allRecipes) {
   const type = e.sourceType || (e.foodCode ? 'FOOD' : null);
   const code = e.sourceCode || e.foodCode || null;
-  if (!type || !code) return { type: null, code: null, name: '-' };
+  if (!type || !code) return { type: null, code: null, name: '-', abbr: '-' };
   if (type === 'RECIPE') {
     const r = allRecipes.find(x => x.code === code);
-    return { type, code, name: r ? r.name : code };
+    return { type, code, name: r ? r.name : code, abbr: r ? abbrOrName(r) : code };
   }
   const f = allFoods.find(x => x.code === code);
-  return { type: 'FOOD', code, name: f ? f.name : code };
+  return { type: 'FOOD', code, name: f ? f.name : code, abbr: f ? abbrOrName(f) : code };
 }
 
 async function renderFeedingSection(host, cat, state, refreshCalendar) {
@@ -94,20 +96,23 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   const formOptionsHtml = forms.map(f => `<option value="${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
   const typeOptionsHtml = types.map(t => `<option value="${escapeHtml(t.code)}">${escapeHtml(t.name)}</option>`).join('');
 
+  const editingEntry = state.editingFeedId ? entries.find(e => e.id === state.editingFeedId) : null;
+
   const rowsHtml = entries.map(e => {
     const src = resolveFeedSource(e, allFoods, allRecipes);
     const kindLabel = e.kind === 'SERVE' ? '提供' : '摂取';
-    const providedText = e.providedAmount != null ? `${e.providedAmount}g` : '-';
-    const eatenText = e.eatenAmount != null ? `${e.eatenAmount}g` : '-';
-    const calorieText = e.kind === 'SERVE' ? '-' : `${e.calorie || 0}kcal`;
+    const amountText = e.kind === 'SERVE'
+      ? (e.providedAmount != null ? `${e.providedAmount}g` : '-')
+      : (e.eatenAmount != null ? `${e.eatenAmount}g` : '-');
+    const calorieText = e.kind === 'SERVE' ? '-' : (e.calorie || 0);
     return `<tr>
-      <td>${escapeHtml(e.time)}</td>
+      <td>${escapeHtml(timeToHHMM(e.time))}</td>
       <td>${kindLabel}</td>
-      <td>${escapeHtml(src.name)}</td>
-      <td>${providedText}</td>
-      <td>${eatenText}</td>
+      <td>${escapeHtml(src.abbr)}</td>
+      <td>${amountText}</td>
       <td>${calorieText}</td>
-      <td>${escapeHtml(e.memo || '-')}</td>
+      <td>${memoFlagHtml(e.memo)}</td>
+      <td><button class="btn-tiny" data-edit-feed="${e.id}">編集</button></td>
       <td><button class="btn-tiny danger" data-del-feed="${e.id}">削除</button></td>
     </tr>`;
   }).join('');
@@ -115,17 +120,18 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   host.innerHTML = `
     <div class="card">
       <div class="card-title">給餌管理</div>
-      <table class="tbl"><thead><tr><th>時刻</th><th>種別</th><th>餌・レシピ</th><th>提供量</th><th>摂取量</th><th>カロリー</th><th>メモ</th><th></th></tr></thead>
+      <table class="tbl"><thead><tr><th>時刻</th><th>種別</th><th>餌・レシピ</th><th>量</th><th>カロリー</th><th>メモ</th><th></th><th></th></tr></thead>
       <tbody>${rowsHtml || '<tr><td colspan="8" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="total-cal">合計カロリー: ${totalCal} kcal</div>
       <div class="feed-form">
+        ${editingEntry ? '<div class="editing-banner">記録を編集中<button id="feedCancelEdit" class="btn-tiny">キャンセル</button></div>' : ''}
         <div class="field"><label>種別</label>
           <select id="feedKind">
-            <option value="INTAKE">摂取</option>
-            <option value="SERVE">提供</option>
+            <option value="INTAKE" ${editingEntry && editingEntry.kind === 'INTAKE' ? 'selected' : ''}>摂取</option>
+            <option value="SERVE" ${editingEntry && editingEntry.kind === 'SERVE' ? 'selected' : ''}>提供</option>
           </select>
         </div>
-        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="feedTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
+        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="feedTime" type="time" step="600" value="${editingEntry ? escapeHtml(editingEntry.time) : floorToTenMinutes(nowTimeStr())}"></div>
         <div class="feed-filter">
           <input id="feedSearch" type="text" placeholder="餌名で検索">
           <select id="filterMaker"><option value="">メーカー(すべて)</option>${makerOptionsHtml}</select>
@@ -133,10 +139,10 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
           <select id="filterType"><option value="">種類(すべて)</option>${typeOptionsHtml}</select>
         </div>
         <div class="field"><label>餌・レシピ</label><select id="feedSource"></select></div>
-        <div class="field"><label id="feedProvidedLabel">提供量(g)</label><input id="feedProvided" type="number" step="0.1"></div>
-        <div class="field" id="feedEatenField"><label>摂取量(g)</label><input id="feedEaten" type="number" step="0.1"></div>
-        <div class="field"><label>メモ</label><input id="feedMemo"></div>
-        <button id="feedSave" class="btn-primary">入力確定</button>
+        <div class="field"><label id="feedProvidedLabel">提供量(g)</label><input id="feedProvided" type="number" step="0.1" value="${editingEntry && editingEntry.providedAmount != null ? editingEntry.providedAmount : ''}"></div>
+        <div class="field" id="feedEatenField"><label>摂取量(g)</label><input id="feedEaten" type="number" step="0.1" value="${editingEntry && editingEntry.eatenAmount != null ? editingEntry.eatenAmount : ''}"></div>
+        <div class="field"><label>メモ</label><input id="feedMemo" value="${editingEntry ? escapeHtml(editingEntry.memo || '') : ''}"></div>
+        <button id="feedSave" class="btn-primary">${editingEntry ? '更新' : '入力確定'}</button>
       </div>
     </div>
   `;
@@ -193,7 +199,10 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   rebuildSourceSelect(null);
   {
     const optionValues = Array.from(sourceSelect.options).map(o => o.value);
-    if (lastSel && optionValues.includes(lastSel)) {
+    const editingVal = editingEntry ? `${editingEntry.sourceType === 'RECIPE' ? 'R' : 'F'}:${editingEntry.sourceCode}` : null;
+    if (editingVal && optionValues.includes(editingVal)) {
+      sourceSelect.value = editingVal;
+    } else if (lastSel && optionValues.includes(lastSel)) {
       sourceSelect.value = lastSel;
     } else if (allFoods.length && optionValues.includes(`F:${allFoods[0].code}`)) {
       sourceSelect.value = `F:${allFoods[0].code}`;
@@ -214,7 +223,7 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
     }
   }
   sourceSelect.addEventListener('change', applyDefault);
-  applyDefault();
+  if (!editingEntry) applyDefault();
 
   searchInput.addEventListener('input', () => { rebuildSourceSelect(); applyDefault(); });
   [filterMaker, filterForm, filterType].forEach(sel => sel.addEventListener('change', () => { rebuildSourceSelect(); applyDefault(); }));
@@ -230,9 +239,21 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
   host.querySelectorAll('[data-del-feed]').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('この記録を削除しますか？')) return;
     await remove('feedingLog', Number(btn.dataset.delFeed));
+    if (state.editingFeedId === Number(btn.dataset.delFeed)) state.editingFeedId = null;
     renderFeedingSection(host, cat, state, refreshCalendar);
     if (refreshCalendar) refreshCalendar();
   }));
+
+  host.querySelectorAll('[data-edit-feed]').forEach(btn => btn.addEventListener('click', () => {
+    state.editingFeedId = Number(btn.dataset.editFeed);
+    renderFeedingSection(host, cat, state, refreshCalendar);
+  }));
+
+  const cancelEditBtn = host.querySelector('#feedCancelEdit');
+  if (cancelEditBtn) cancelEditBtn.addEventListener('click', () => {
+    state.editingFeedId = null;
+    renderFeedingSection(host, cat, state, refreshCalendar);
+  });
 
   const saveBtn = host.querySelector('#feedSave');
   if (saveBtn) saveBtn.addEventListener('click', async () => {
@@ -272,7 +293,7 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
       }
     }
 
-    await put('feedingLog', {
+    const data = {
       catCode: cat.code,
       date: state.date,
       time,
@@ -284,9 +305,17 @@ async function renderFeedingSection(host, cat, state, refreshCalendar) {
       breakdown,
       calorie,
       memo: memoInput.value
-    });
+    };
 
-    localStorage.setItem(lastSelKey, sourceVal);
+    if (editingEntry) {
+      if (!confirm('この内容で更新しますか？')) return;
+      data.id = editingEntry.id;
+      await put('feedingLog', data);
+      state.editingFeedId = null;
+    } else {
+      await put('feedingLog', data);
+      localStorage.setItem(lastSelKey, sourceVal);
+    }
     renderFeedingSection(host, cat, state, refreshCalendar);
     if (refreshCalendar) refreshCalendar();
   });
@@ -314,14 +343,18 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
     return eff ? eff.name : '-';
   }
 
+  const editingEntry = state.editingMedId ? entries.find(e => e.id === state.editingMedId) : null;
+
   const rowsHtml = entries.map(e => {
     const m = allMedicines.find(x => x.code === e.medicineCode);
     const doseText = e.dose != null ? `${e.dose}${unitName(m ? m.unitCode : '')}` : '-';
     return `<tr>
-      <td>${escapeHtml(e.time)}</td>
-      <td>${escapeHtml(m ? m.name : e.medicineCode)}</td>
+      <td>${escapeHtml(timeToHHMM(e.time))}</td>
+      <td>${escapeHtml(m ? abbrOrName(m) : e.medicineCode)}</td>
       <td>${escapeHtml(m ? effectName(m.effectCode) : '-')}</td>
       <td>${escapeHtml(doseText)}</td>
+      <td>${memoFlagHtml(e.memo)}</td>
+      <td><button class="btn-tiny" data-edit-medicine-log="${e.id}">編集</button></td>
       <td><button class="btn-tiny danger" data-del-medicine-log="${e.id}">削除</button></td>
     </tr>`;
   }).join('');
@@ -329,10 +362,11 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
   host.innerHTML = `
     <div class="card">
       <div class="card-title">サプリ・投薬管理</div>
-      <table class="tbl"><thead><tr><th>時刻</th><th>サプリ・薬</th><th>効能</th><th>用量</th><th></th></tr></thead>
-      <tbody>${rowsHtml || '<tr><td colspan="5" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
+      <table class="tbl"><thead><tr><th>時刻</th><th>サプリ・薬</th><th>効能</th><th>用量</th><th>メモ</th><th></th><th></th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="7" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
-        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="medTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
+        ${editingEntry ? '<div class="editing-banner">記録を編集中<button id="medCancelEdit" class="btn-tiny">キャンセル</button></div>' : ''}
+        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="medTime" type="time" step="600" value="${editingEntry ? escapeHtml(editingEntry.time) : floorToTenMinutes(nowTimeStr())}"></div>
         <div class="feed-filter">
           <input id="medSearch" type="text" placeholder="名前で検索">
           <select id="filterKind">
@@ -342,8 +376,9 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
           </select>
         </div>
         <div class="field"><label>サプリ・薬</label><select id="medSelect"></select></div>
-        <div class="field"><label id="medDoseLabel">用量</label><input id="medDose" type="number" step="0.01"></div>
-        <button id="medSave" class="btn-primary">入力確定</button>
+        <div class="field"><label id="medDoseLabel">用量</label><input id="medDose" type="number" step="0.01" value="${editingEntry && editingEntry.dose != null ? editingEntry.dose : ''}"></div>
+        <div class="field"><label>メモ</label><input id="medMemo" value="${editingEntry ? escapeHtml(editingEntry.memo || '') : ''}"></div>
+        <button id="medSave" class="btn-primary">${editingEntry ? '更新' : '入力確定'}</button>
       </div>
     </div>
   `;
@@ -353,6 +388,7 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
   const filterKind = host.querySelector('#filterKind');
   const doseInput = host.querySelector('#medDose');
   const doseLabel = host.querySelector('#medDoseLabel');
+  const medMemo = host.querySelector('#medMemo');
   const timeInput = host.querySelector('#medTime');
   timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
 
@@ -381,7 +417,15 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
   }
   if (medSelect) {
     rebuildMedSelect(null);
-    applyDefaultDose();
+    if (editingEntry && Array.from(medSelect.options).some(o => o.value === editingEntry.medicineCode)) {
+      medSelect.value = editingEntry.medicineCode;
+      doseLabel.textContent = (() => {
+        const m = allMedicines.find(x => x.code === medSelect.value);
+        return m ? `用量（${unitName(m.unitCode) || '単位未設定'}）` : '用量';
+      })();
+    } else {
+      applyDefaultDose();
+    }
     medSelect.addEventListener('change', applyDefaultDose);
     medSearch.addEventListener('input', () => { rebuildMedSelect(); applyDefaultDose(); });
     filterKind.addEventListener('change', () => { rebuildMedSelect(); applyDefaultDose(); });
@@ -390,9 +434,21 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
   host.querySelectorAll('[data-del-medicine-log]').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('この記録を削除しますか？')) return;
     await remove('medicineLog', Number(btn.dataset.delMedicineLog));
+    if (state.editingMedId === Number(btn.dataset.delMedicineLog)) state.editingMedId = null;
     renderMedicineSection(host, cat, state, refreshCalendar);
     if (refreshCalendar) refreshCalendar();
   }));
+
+  host.querySelectorAll('[data-edit-medicine-log]').forEach(btn => btn.addEventListener('click', () => {
+    state.editingMedId = Number(btn.dataset.editMedicineLog);
+    renderMedicineSection(host, cat, state, refreshCalendar);
+  }));
+
+  const cancelEditBtn = host.querySelector('#medCancelEdit');
+  if (cancelEditBtn) cancelEditBtn.addEventListener('click', () => {
+    state.editingMedId = null;
+    renderMedicineSection(host, cat, state, refreshCalendar);
+  });
 
   const saveBtn = host.querySelector('#medSave');
   if (saveBtn) saveBtn.addEventListener('click', async () => {
@@ -402,7 +458,16 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
     if (!time) { alert('時刻を入力してください'); return; }
     const doseStr = doseInput.value;
     const dose = doseStr === '' ? null : Number(doseStr);
-    await put('medicineLog', { catCode: cat.code, date: state.date, time, medicineCode, dose });
+    const data = { catCode: cat.code, date: state.date, time, medicineCode, dose, memo: medMemo.value };
+
+    if (editingEntry) {
+      if (!confirm('この内容で更新しますか？')) return;
+      data.id = editingEntry.id;
+      await put('medicineLog', data);
+      state.editingMedId = null;
+    } else {
+      await put('medicineLog', data);
+    }
     renderMedicineSection(host, cat, state, refreshCalendar);
     if (refreshCalendar) refreshCalendar();
   });
@@ -523,6 +588,79 @@ async function renderMemoSection(host, cat, state, refreshCalendar) {
   });
 }
 
+// ===== 日々の集約ログ（🍴💊💩🤮📝を時刻順にまとめて表示） =====
+async function buildDailyLogRowsHtml(cat, state) {
+  const { getAll } = await import('./db.js');
+  const [feedRows, medRows, excRows, memoRows, allFoods, allRecipes, allMedicines, units, stoolStates, vomitStates] = await Promise.all([
+    getByIndex('feedingLog', 'byCatDate', [cat.code, state.date]),
+    getByIndex('medicineLog', 'byCatDate', [cat.code, state.date]),
+    getByIndex('excretionLog', 'byCatDate', [cat.code, state.date]),
+    getByIndex('memoLog', 'byCatDate', [cat.code, state.date]),
+    getAll('foodMaster'),
+    getAll('recipeMaster'),
+    getAll('medicineMaster'),
+    getByIndex('codeMaster', 'byCategory', MED_UNIT_CATEGORY),
+    getByIndex('codeMaster', 'byCategory', STOOL_STATE_CATEGORY),
+    getByIndex('codeMaster', 'byCategory', VOMIT_STATE_CATEGORY)
+  ]);
+
+  function unitName(code) {
+    const u = units.find(x => x.code === code);
+    return u ? u.name : '';
+  }
+  function stateNamesFor(e, statesList) {
+    return excretionStateCodes(e).map(code => {
+      const s = statesList.find(x => x.code === code);
+      return s ? s.name : code;
+    }).join('、') || '-';
+  }
+
+  const rows = [];
+
+  feedRows.forEach(e => {
+    const src = resolveFeedSource(e, allFoods, allRecipes);
+    const kindLabel = e.kind === 'SERVE' ? '提供' : '摂取';
+    const amount = e.kind === 'SERVE'
+      ? (e.providedAmount != null ? `${e.providedAmount}g` : '')
+      : (e.eatenAmount != null ? `${e.eatenAmount}g` : '');
+    const calPart = e.kind === 'SERVE' ? '' : ` 🔥${e.calorie || 0}`;
+    rows.push({ time: e.time, html: `<div class="daily-log-row">🍴${escapeHtml(timeToHHMM(e.time))} ${kindLabel} ${escapeHtml(src.abbr)}${amount ? ' ' + amount : ''}${calPart} ${memoFlagHtml(e.memo)}</div>` });
+  });
+
+  medRows.forEach(e => {
+    const m = allMedicines.find(x => x.code === e.medicineCode);
+    const doseText = e.dose != null ? `${e.dose}${unitName(m ? m.unitCode : '')}` : '';
+    rows.push({ time: e.time, html: `<div class="daily-log-row">💊${escapeHtml(timeToHHMM(e.time))} ${escapeHtml(m ? abbrOrName(m) : e.medicineCode)}${doseText ? ' ' + doseText : ''} ${memoFlagHtml(e.memo)}</div>` });
+  });
+
+  excRows.forEach(e => {
+    const icon = e.type === 'VOMIT' ? '🤮' : '💩';
+    const statesList = (e.type === 'VOMIT' ? vomitStates : stoolStates).filter(s => s.code !== '');
+    rows.push({ time: e.time, html: `<div class="daily-log-row">${icon}${escapeHtml(timeToHHMM(e.time))} ${escapeHtml(stateNamesFor(e, statesList))} ${memoFlagHtml(e.memo)}</div>` });
+  });
+
+  memoRows.forEach(e => {
+    rows.push({ time: e.time, html: `<div class="daily-log-row">📝${escapeHtml(timeToHHMM(e.time))} ${escapeHtml(e.memo || '')}</div>` });
+  });
+
+  rows.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  return rows.map(r => r.html).join('');
+}
+
+function buildDailySummaryLineHtml(existing, events) {
+  if (!existing) return '';
+  const parts = [];
+  if (existing.weight != null) parts.push(`体重${existing.weight}kg`);
+  if (existing.urineAmount != null) parts.push(`尿量${existing.urineAmount}ml`);
+  const evNames = (existing.events || []).map(code => {
+    const ev = events.find(x => x.code === code);
+    return ev ? ev.name : code;
+  });
+  if (evNames.length) parts.push(evNames.join('、'));
+  if (!parts.length) return '';
+  return `<div class="daily-log-row daily-log-summary">🏥 ${parts.map(p => escapeHtml(p)).join(' ')}</div>`;
+}
+
 // ===== 日々管理 =====
 async function renderDailySection(host, cat, state, refreshCalendar) {
   const rows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
@@ -536,6 +674,10 @@ async function renderDailySection(host, cat, state, refreshCalendar) {
     return `<label class="chk"><input type="checkbox" class="daily-event-chk" value="${escapeHtml(e.code)}" ${checked}> ${escapeHtml(e.name)}</label>`;
   }).join('');
 
+  const summaryLineHtml = buildDailySummaryLineHtml(existing, events);
+  const logRowsHtml = await buildDailyLogRowsHtml(cat, state);
+  const dailyLogListHtml = (summaryLineHtml + logRowsHtml) || '<div class="muted">この日はまだ記録がありません</div>';
+
   host.innerHTML = `
     <div class="card">
       <div class="card-title">日々管理</div>
@@ -545,6 +687,7 @@ async function renderDailySection(host, cat, state, refreshCalendar) {
       <div class="field"><label>イベント</label><div class="chk-list">${eventChecksHtml || '<span class="muted">コードマスタの「日々のイベント」にコードを追加してください</span>'}</div></div>
       <div class="field"><label>メモ</label><input id="dailyMemo" value="${existing && existing.memo ? escapeHtml(existing.memo) : ''}"></div>
       <button id="dailySave" class="btn-primary">保存</button>
+      <div class="daily-log-list">${dailyLogListHtml}</div>
     </div>
   `;
 
