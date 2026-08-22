@@ -18,7 +18,7 @@ export async function exportSelected(storeNames) {
     name: 'meta.json',
     text: JSON.stringify({ exportedAt: new Date().toISOString(), version: 1, stores: storeNames }, null, 2)
   });
-  downloadZip(entries, `cat-health-backup-${stamp}.zip`);
+  await downloadZip(entries, `cat-health-backup-${stamp}.zip`);
 }
 
 export async function importAll(file) {

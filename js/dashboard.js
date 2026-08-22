@@ -719,10 +719,10 @@ async function renderIO(content, callbacks) {
   content.querySelector('#exportSelectNone').addEventListener('click', () => {
     storeChks.forEach(c => { c.checked = false; });
   });
-  content.querySelector('#exportBtn').addEventListener('click', () => {
+  content.querySelector('#exportBtn').addEventListener('click', async () => {
     const selected = Array.from(storeChks).filter(c => c.checked).map(c => c.value);
     if (!selected.length) { alert('エクスポートする項目を選択してください'); return; }
-    exportSelected(selected);
+    await exportSelected(selected);
   });
   content.querySelector('#importBtn').addEventListener('click', async () => {
     const fileInput = content.querySelector('#importFile');

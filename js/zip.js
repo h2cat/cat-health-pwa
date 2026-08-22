@@ -117,9 +117,7 @@ export function makeZip(entries) {
   return out;
 }
 
-export function downloadZip(entries, filename) {
-  const bytes = makeZip(entries);
-  const blob = new Blob([bytes], { type: 'application/zip' });
+function downloadZipViaAnchor(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -128,6 +126,37 @@ export function downloadZip(entries, filename) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// ZIPをダウンロードする。iPhone等でGoogle Driveに直接保存できるよう、
+// OSの共有シート（Web Share API、ファイル共有対応時）を優先的に使う。
+// 共有シートが使えない環境（PCブラウザなど）では従来通りのダウンロードリンク方式にフォールバックする。
+export async function downloadZip(entries, filename) {
+  const bytes = makeZip(entries);
+  const blob = new Blob([bytes], { type: 'application/zip' });
+
+  let canUseShare = false;
+  let shareFile = null;
+  if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare && typeof File !== 'undefined') {
+    try {
+      shareFile = new File([blob], filename, { type: 'application/zip' });
+      canUseShare = navigator.canShare({ files: [shareFile] });
+    } catch (e) {
+      canUseShare = false;
+    }
+  }
+
+  if (canUseShare) {
+    try {
+      await navigator.share({ files: [shareFile], title: filename });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // ユーザーが共有をキャンセルした場合は何もしない
+      // 共有に失敗した場合は通常のダウンロードにフォールバック
+    }
+  }
+
+  downloadZipViaAnchor(blob, filename);
 }
 
 function readU16(view, off) { return view.getUint16(off, true); }
