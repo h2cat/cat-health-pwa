@@ -38,6 +38,7 @@ export const initialCodeMaster = [
   { category: 'MAKER', code: 'ROYAL_CANIN', name: 'ロイヤルカナン' },
   { category: 'MAKER', code: 'HILLS', name: 'ヒルズ' },
   { category: 'MAKER', code: 'PURINA', name: 'ピュリナ' },
+  { category: 'MAKER', code: 'DRS_CARE', name: 'ドクターズケア' },
 
   // うんちの状態（自由に言葉や項目を追加・変更してOK）
   { category: 'STOOL_STATE', code: '', name: 'うんちの状態' },
@@ -88,15 +89,17 @@ export const initialCatMaster = [
 export const initialFoodMaster = [
   { code: 'SELECT_DUCK_DRY', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインダック&ライス', abbr: 'セレクトプロテイン', caloriePer100g: 349, formCode: 'DRY', typeCode: 'OTHER_THERAPY' },
   { code: 'SELECT_CHICKEN_WET', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインチキン&ライス', abbr: 'セレクトプロテイン', caloriePer100g: 103, formCode: 'WET', typeCode: 'OTHER_THERAPY' },
+  { code: 'STOMACH_CARE', makerCode: 'DRS_CARE', name: 'ストマックケア', abbr: 'ストマックケア', caloriePer100g: 350, formCode: 'DRY', typeCode: 'OTHER_THERAPY' },
 ];
 
 // ----- サプリ・投薬マスタ -----
 // 例: { code: 'M001', name: 'セレニア', abbr: 'セレニア', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_EMETIC', memo: '朝晩' },
 export const initialMedicineMaster = [
-  { code: 'CERENIA', name: 'セレニア', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_EMETIC', memo: '1日1回or頓服' },
+  { code: 'CERENIA', name: 'セレニア', kindFlag: 'DRUG', defaultDose: 6, unitCode: 'MG', effectCode: 'ANTI_EMETIC', memo: '1日1回or頓服6～8mg' },
   { code: 'CERENIA_SHOT', name: 'セレニア注射', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'SHOT', effectCode: 'ANTI_EMETIC', memo: '1日1回or頓服' },
-  { code: 'REMERON', name: 'レメロン', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'TABLET', effectCode: 'APPETITE_STIMULATION', memo: '3日に1回or頓服' },
+  { code: 'REMERON', name: 'レメロン', kindFlag: 'DRUG', defaultDose: 1.8, unitCode: 'MG', effectCode: 'APPETITE_STIMULATION', memo: '3日に1回or頓服' },
   { code: 'DIABUSTER', name: 'ディアバスター', kindFlag: 'DRUG', defaultDose: 1, unitCode: 'TABLET', effectCode: 'ANTI_DIARRHEAL', memo: '1日に2回or頓服' },
+  { code: 'PRONAMIDE', name: 'プロナミド', abbr: 'プロナミド', kindFlag: 'DRUG', defaultDose: 0.5, unitCode: 'TABLET', effectCode: 'ANTI_EMETIC', memo: '1日2回 1/2錠（カレンダー記載の「プロアミド」は同一薬の表記ゆれ）' },
 ];
 
 // ----- レシピマスタ（複数の餌を混ぜて与える場合のみ登録。単一の餌はそのまま餌マスタから選べます） -----
