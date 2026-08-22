@@ -638,6 +638,12 @@ async function renderIO(content, callbacks) {
         <button id="importBtn" class="btn-primary">インポート</button>
       </div>
       <div class="card">
+        <div class="card-title">猫別 日々データ取込</div>
+        <p class="muted">import/devico.json のような、猫1匹分の日々の記録（給餌・投薬・うんち/ゲロ・メモ・体重など）をまとめたJSONを取り込みます。対象の猫×日付の範囲だけを作り直すので、他の猫・他の日・マスタには影響しません。何度取り込み直しても重複しません。フォーマットは import/FORMAT.md を参照してください。</p>
+        <input type="file" id="dayImportFile" accept="application/json">
+        <button id="dayImportBtn" class="btn-primary">取込</button>
+      </div>
+      <div class="card">
         <div class="card-title">初期化</div>
         <p class="muted">保存されているデータをすべて削除し、js/initial-data.js の内容だけを反映し直します。元に戻せません。</p>
         <button id="resetBtn" class="btn-small danger">初期化する</button>
@@ -645,6 +651,7 @@ async function renderIO(content, callbacks) {
     </div>
   `;
   const { exportAll, importAll } = await import('./io.js');
+  const { importCatDayLogFile } = await import('./dayImport.js');
   content.querySelector('#exportBtn').addEventListener('click', () => exportAll());
   content.querySelector('#importBtn').addEventListener('click', async () => {
     const fileInput = content.querySelector('#importFile');
@@ -653,6 +660,19 @@ async function renderIO(content, callbacks) {
     await importAll(fileInput.files[0]);
     if (callbacks && callbacks.onCatsChanged) callbacks.onCatsChanged();
     alert('インポートしました');
+  });
+  content.querySelector('#dayImportBtn').addEventListener('click', async () => {
+    const fileInput = content.querySelector('#dayImportFile');
+    if (!fileInput.files[0]) { alert('ファイルを選択してください'); return; }
+    try {
+      const result = await importCatDayLogFile(fileInput.files[0]);
+      if (callbacks && callbacks.onCatsChanged) callbacks.onCatsChanged();
+      let msg = `${result.catCode}: ${result.dates}日分を取り込みました\n給餌${result.feeding}件 / 投薬${result.medicine}件 / うんち${result.poop}件 / ゲロ${result.vomit}件 / メモ${result.memos}件`;
+      if (result.errors.length) msg += `\n\n警告:\n${result.errors.join('\n')}`;
+      alert(msg);
+    } catch (err) {
+      alert('取込に失敗しました: ' + err.message);
+    }
   });
   content.querySelector('#resetBtn').addEventListener('click', async () => {
     if (!confirm('すべてのデータを削除し、js/initial-data.js の内容で初期化します。よろしいですか？（元に戻せません）')) return;

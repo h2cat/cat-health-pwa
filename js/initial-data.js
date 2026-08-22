@@ -86,6 +86,8 @@ export const initialCatMaster = [
 // ----- 餌マスタ -----
 // 例: { code: 'F001', maker: 'メーカー名', name: '商品名', abbr: '略称', caloriePer100g: 350, formCode: 'DRY', typeCode: 'RENAL_THERAPY', defaultAmountG: 40 },
 export const initialFoodMaster = [
+  { code: 'SELECT_DUCK_DRY', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインダック&ライス', abbr: 'セレクトプロテイン', caloriePer100g: 349, formCode: 'DRY', typeCode: 'OTHER_THERAPY' },
+  { code: 'SELECT_CHICKEN_WET', makerCode: 'ROYAL_CANIN', name: 'セレクトプロテインチキン&ライス', abbr: 'セレクトプロテイン', caloriePer100g: 103, formCode: 'WET', typeCode: 'OTHER_THERAPY' },
 ];
 
 // ----- サプリ・投薬マスタ -----
