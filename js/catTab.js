@@ -657,12 +657,12 @@ async function buildDailyLogRowsHtml(cat, state) {
   return rows.map(r => r.html).join('');
 }
 
-function buildDailySummaryLineHtml(existing, events) {
-  if (!existing) return '';
+function buildDailySummaryLineHtml(existing, events, totalCal) {
   const parts = [];
-  if (existing.weight != null) parts.push(`体重${existing.weight}kg`);
-  if (existing.urineAmount != null) parts.push(`尿量${existing.urineAmount}ml`);
-  const evNames = (existing.events || []).map(code => {
+  if (existing && existing.weight != null) parts.push(`体重${existing.weight}kg`);
+  if (existing && existing.urineAmount != null) parts.push(`尿量${existing.urineAmount}ml`);
+  if (totalCal) parts.push(`合計🔥${totalCal}kcal`);
+  const evNames = ((existing && existing.events) || []).map(code => {
     const ev = events.find(x => x.code === code);
     return ev ? ev.name : code;
   });
@@ -684,7 +684,9 @@ async function renderDailySection(host, cat, state, refreshCalendar) {
     return `<label class="chk"><input type="checkbox" class="daily-event-chk" value="${escapeHtml(e.code)}" ${checked}> ${escapeHtml(e.name)}</label>`;
   }).join('');
 
-  const summaryLineHtml = buildDailySummaryLineHtml(existing, events);
+  const feedRowsForCal = await getByIndex('feedingLog', 'byCatDate', [cat.code, state.date]);
+  const totalCal = Math.round(feedRowsForCal.reduce((s, e) => s + (e.kind === 'INTAKE' ? (e.calorie || 0) : 0), 0) * 10) / 10;
+  const summaryLineHtml = buildDailySummaryLineHtml(existing, events, totalCal);
   const logRowsHtml = await buildDailyLogRowsHtml(cat, state);
   const dailyLogListHtml = (summaryLineHtml + logRowsHtml) || '<div class="muted">この日はまだ記録がありません</div>';
 
