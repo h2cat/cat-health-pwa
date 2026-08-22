@@ -13,6 +13,20 @@ export function todayStr() {
   return formatDate(new Date());
 }
 
+// 「1日の区切りは朝6時」ルールに基づく論理上の今日の日付を返す。
+// 実時刻が00:00〜05:59の間は、まだ前日の続き（深夜）として扱い、前日の日付を返す。
+// 例: 実時刻が08/23 01:20 なら 08/22 を返す。カレンダーのアクティブ日や
+// 「今日に戻る」ボタンの遷移先など、アプリの「今日」の基準として使う。
+export function logicalTodayStr() {
+  const now = new Date();
+  if (now.getHours() < 6) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    return formatDate(d);
+  }
+  return formatDate(now);
+}
+
 export function formatDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -90,6 +104,22 @@ export function formatDisplayTime(timeStr) {
   const min = String(m[2]).padStart(2, '0');
   if (h >= 90) return '夜間';
   if (h >= 24) h -= 24;
+  return `${String(h).padStart(2, '0')}:${min}`;
+}
+
+// ログ保存時の時刻正規化。「1日は朝6時始まり」ルールに基づき、
+// 入力された時刻が00:00〜05:59（深夜〜早朝）の場合は、その日の続きとして
+// ソート順を保つために24を足した延長表記（例: 01:20 → 25:20）で保存する。
+// 06:00以降の通常時刻はそのまま返す。
+export function normalizeEntryTime(timeStr) {
+  if (!timeStr) return timeStr;
+  const m = timeStr.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!m) return timeStr;
+  const h = Number(m[1]);
+  const min = String(m[2]).padStart(2, '0');
+  if (h >= 0 && h < 6) {
+    return `${h + 24}:${min}`;
+  }
   return `${String(h).padStart(2, '0')}:${min}`;
 }
 
