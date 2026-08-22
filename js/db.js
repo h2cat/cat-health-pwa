@@ -1,6 +1,6 @@
 // IndexedDB wrapper (Promiseベース)
 const DB_NAME = 'catHealthDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise = null;
 
@@ -47,6 +47,11 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains('recipeMaster')) {
         db.createObjectStore('recipeMaster', { keyPath: 'code' });
+      }
+      if (!db.objectStoreNames.contains('memoLog')) {
+        const store = db.createObjectStore('memoLog', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('byCatDate', ['catCode', 'date'], { unique: false });
+        store.createIndex('byCat', 'catCode', { unique: false });
       }
     };
     req.onsuccess = (e) => resolve(e.target.result);
@@ -113,4 +118,4 @@ export async function getByIndex(storeName, indexName, query) {
   });
 }
 
-export const STORES = ['codeMaster', 'catMaster', 'foodMaster', 'dailyLog', 'feedingLog', 'medicineMaster', 'medicineLog', 'excretionLog', 'recipeMaster'];
+export const STORES = ['codeMaster', 'catMaster', 'foodMaster', 'dailyLog', 'feedingLog', 'medicineMaster', 'medicineLog', 'excretionLog', 'recipeMaster', 'memoLog'];

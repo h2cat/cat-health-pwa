@@ -70,6 +70,28 @@ header.app-header {
   border-color: #d8792f;
 }
 
+.icon-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.icon-nav-btn {
+  flex: 1 0 auto;
+  min-width: 44px;
+  padding: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 22px;
+  line-height: 1;
+}
+.icon-nav-btn.active {
+  background: #fff3e6;
+  border-color: #d8792f;
+  box-shadow: inset 0 0 0 1px #d8792f;
+}
+
 .card {
   background: #fff;
   border: 1px solid #eee;

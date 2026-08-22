@@ -2,20 +2,31 @@ import { get, put, remove, getByIndex } from './db.js';
 import { escapeHtml, todayStr, formatDate, calcCalorie, floorToTenMinutes } from './utils.js';
 import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY } from './dashboard.js';
 
-const stateMap = {}; // catCode -> { date, calendarMonth (Date) }
+const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
 
 function getState(catCode) {
   if (!stateMap[catCode]) {
     const today = new Date();
-    stateMap[catCode] = { date: todayStr(), calendarMonth: new Date(today.getFullYear(), today.getMonth(), 1) };
+    stateMap[catCode] = { date: todayStr(), calendarMonth: new Date(today.getFullYear(), today.getMonth(), 1), activeSection: 'feeding' };
   }
   return stateMap[catCode];
 }
+
+const SECTIONS = [
+  { key: 'feeding', icon: '🍴', title: '給餌管理' },
+  { key: 'medicine', icon: '💊', title: 'サプリ・投薬管理' },
+  { key: 'poop', icon: '💩', title: 'うんち記録' },
+  { key: 'vomit', icon: '🤮', title: 'ゲロ記録' },
+  { key: 'daily', icon: '🏥', title: '日々管理' },
+  { key: 'memo', icon: '📝', title: 'メモ' }
+];
 
 export async function renderCatTab(container, catCode) {
   const cat = await get('catMaster', catCode);
   if (!cat) { container.innerHTML = '<p>猫データが見つかりません</p>'; return; }
   const state = getState(catCode);
+
+  const navHtml = SECTIONS.map(s => `<button class="icon-nav-btn ${state.activeSection === s.key ? 'active' : ''}" data-section="${s.key}" title="${s.title}">${s.icon}</button>`).join('');
 
   container.innerHTML = `
     <div class="cat-header">
@@ -25,10 +36,8 @@ export async function renderCatTab(container, catCode) {
         ${state.date !== todayStr() ? '<button id="backToday" class="btn-tiny">今日に戻る</button>' : ''}
       </div>
     </div>
-    <div id="feedingSection"></div>
-    <div id="medicineSection"></div>
-    <div id="excretionSection"></div>
-    <div id="dailySection"></div>
+    <div class="icon-nav">${navHtml}</div>
+    <div id="sectionHost"></div>
     <div id="calendarSection"></div>
   `;
 
@@ -38,13 +47,22 @@ export async function renderCatTab(container, catCode) {
     renderCatTab(container, catCode);
   });
 
+  container.querySelectorAll('.icon-nav-btn').forEach(btn => btn.addEventListener('click', () => {
+    state.activeSection = btn.dataset.section;
+    renderCatTab(container, catCode);
+  }));
+
   const calHost = container.querySelector('#calendarSection');
   const refreshCalendar = () => renderCalendarSection(calHost, cat, state, container);
 
-  await renderFeedingSection(container.querySelector('#feedingSection'), cat, state, refreshCalendar);
-  await renderMedicineSection(container.querySelector('#medicineSection'), cat, state, refreshCalendar);
-  await renderExcretionSection(container.querySelector('#excretionSection'), cat, state, refreshCalendar);
-  await renderDailySection(container.querySelector('#dailySection'), cat, state, refreshCalendar);
+  const sectionHost = container.querySelector('#sectionHost');
+  if (state.activeSection === 'feeding') await renderFeedingSection(sectionHost, cat, state, refreshCalendar);
+  else if (state.activeSection === 'medicine') await renderMedicineSection(sectionHost, cat, state, refreshCalendar);
+  else if (state.activeSection === 'poop') await renderExcretionTypeSection(sectionHost, cat, state, refreshCalendar, 'POOP');
+  else if (state.activeSection === 'vomit') await renderExcretionTypeSection(sectionHost, cat, state, refreshCalendar, 'VOMIT');
+  else if (state.activeSection === 'daily') await renderDailySection(sectionHost, cat, state, refreshCalendar);
+  else if (state.activeSection === 'memo') await renderMemoSection(sectionHost, cat, state, refreshCalendar);
+
   await refreshCalendar();
 }
 
@@ -307,63 +325,55 @@ async function renderMedicineSection(host, cat, state, refreshCalendar) {
   });
 }
 
-// ===== うんち・ゲロ記録 =====
-async function renderExcretionSection(host, cat, state, refreshCalendar) {
-  const stoolStates = (await getByIndex('codeMaster', 'byCategory', STOOL_STATE_CATEGORY)).filter(s => s.code !== '');
-  const vomitStates = (await getByIndex('codeMaster', 'byCategory', VOMIT_STATE_CATEGORY)).filter(s => s.code !== '');
-  const entries = (await getByIndex('excretionLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+// ===== うんち／ゲロ記録（アイコンで種別固定） =====
+const EXCRETION_CONFIG = {
+  POOP: { title: 'うんち記録', category: STOOL_STATE_CATEGORY },
+  VOMIT: { title: 'ゲロ記録', category: VOMIT_STATE_CATEGORY }
+};
 
-  function stateName(type, code) {
-    const list = type === 'POOP' ? stoolStates : vomitStates;
-    const s = list.find(x => x.code === code);
+async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fixedType) {
+  const cfg = EXCRETION_CONFIG[fixedType];
+  const states = (await getByIndex('codeMaster', 'byCategory', cfg.category)).filter(s => s.code !== '');
+  const entries = (await getByIndex('excretionLog', 'byCatDate', [cat.code, state.date]))
+    .filter(e => e.type === fixedType)
+    .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  function stateName(code) {
+    const s = states.find(x => x.code === code);
     return s ? s.name : code;
   }
 
   const rowsHtml = entries.map(e => `<tr>
     <td>${escapeHtml(e.time)}</td>
-    <td>${e.type === 'POOP' ? 'うんち' : 'ゲロ'}</td>
-    <td>${escapeHtml(stateName(e.type, e.stateCode))}</td>
+    <td>${escapeHtml(stateName(e.stateCode))}</td>
     <td>${escapeHtml(e.memo || '-')}</td>
     <td><button class="btn-tiny danger" data-del-excretion="${e.id}">削除</button></td>
   </tr>`).join('');
 
-  function stateOptions(type) {
-    const list = type === 'POOP' ? stoolStates : vomitStates;
-    return list.map(s => `<option value="${escapeHtml(s.code)}">${escapeHtml(s.name)}</option>`).join('');
-  }
+  const stateOptionsHtml = states.map(s => `<option value="${escapeHtml(s.code)}">${escapeHtml(s.name)}</option>`).join('');
 
   host.innerHTML = `
     <div class="card">
-      <div class="card-title">うんち・ゲロ記録</div>
-      <table class="tbl"><thead><tr><th>時刻</th><th>種別</th><th>状態</th><th>メモ</th><th></th></tr></thead>
-      <tbody>${rowsHtml || '<tr><td colspan="5" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
+      <div class="card-title">${cfg.title}</div>
+      <table class="tbl"><thead><tr><th>時刻</th><th>状態</th><th>メモ</th><th></th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="4" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
         <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="excTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
-        <div class="field"><label>種別</label>
-          <select id="excType">
-            <option value="POOP">うんち</option>
-            <option value="VOMIT">ゲロ</option>
-          </select>
-        </div>
-        <div class="field"><label>状態</label><select id="excState">${stateOptions('POOP')}</select></div>
+        <div class="field"><label>状態</label><select id="excState">${stateOptionsHtml || '<option value="">未登録です</option>'}</select></div>
         <div class="field"><label>メモ</label><input id="excMemo"></div>
         <button id="excSave" class="btn-primary">入力確定</button>
       </div>
     </div>
   `;
 
-  const typeSelect = host.querySelector('#excType');
   const stateSelect = host.querySelector('#excState');
   const timeInput = host.querySelector('#excTime');
   timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
-  typeSelect.addEventListener('change', () => {
-    stateSelect.innerHTML = stateOptions(typeSelect.value);
-  });
 
   host.querySelectorAll('[data-del-excretion]').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('この記録を削除しますか？')) return;
     await remove('excretionLog', Number(btn.dataset.delExcretion));
-    renderExcretionSection(host, cat, state, refreshCalendar);
+    renderExcretionTypeSection(host, cat, state, refreshCalendar, fixedType);
     if (refreshCalendar) refreshCalendar();
   }));
 
@@ -371,12 +381,56 @@ async function renderExcretionSection(host, cat, state, refreshCalendar) {
   if (saveBtn) saveBtn.addEventListener('click', async () => {
     const time = floorToTenMinutes(timeInput.value);
     if (!time) { alert('時刻を入力してください'); return; }
-    const type = typeSelect.value;
     const stateCode = stateSelect.value;
     if (!stateCode) { alert('状態を選択してください'); return; }
     const memo = host.querySelector('#excMemo').value;
-    await put('excretionLog', { catCode: cat.code, date: state.date, time, type, stateCode, memo });
-    renderExcretionSection(host, cat, state, refreshCalendar);
+    await put('excretionLog', { catCode: cat.code, date: state.date, time, type: fixedType, stateCode, memo });
+    renderExcretionTypeSection(host, cat, state, refreshCalendar, fixedType);
+    if (refreshCalendar) refreshCalendar();
+  });
+}
+
+// ===== メモ（時間単位のメモのみ） =====
+async function renderMemoSection(host, cat, state, refreshCalendar) {
+  const entries = (await getByIndex('memoLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  const rowsHtml = entries.map(e => `<tr>
+    <td>${escapeHtml(e.time)}</td>
+    <td>${escapeHtml(e.memo || '-')}</td>
+    <td><button class="btn-tiny danger" data-del-memo="${e.id}">削除</button></td>
+  </tr>`).join('');
+
+  host.innerHTML = `
+    <div class="card">
+      <div class="card-title">メモ</div>
+      <table class="tbl"><thead><tr><th>時刻</th><th>メモ</th><th></th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="3" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
+      <div class="feed-form">
+        <div class="field"><label>時刻（10分単位に切り捨て）</label><input id="memoTime" type="time" step="600" value="${floorToTenMinutes(nowTimeStr())}"></div>
+        <div class="field"><label>メモ</label><input id="memoText"></div>
+        <button id="memoSave" class="btn-primary">入力確定</button>
+      </div>
+    </div>
+  `;
+
+  const timeInput = host.querySelector('#memoTime');
+  timeInput.addEventListener('change', () => { timeInput.value = floorToTenMinutes(timeInput.value); });
+
+  host.querySelectorAll('[data-del-memo]').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('この記録を削除しますか？')) return;
+    await remove('memoLog', Number(btn.dataset.delMemo));
+    renderMemoSection(host, cat, state, refreshCalendar);
+    if (refreshCalendar) refreshCalendar();
+  }));
+
+  const saveBtn = host.querySelector('#memoSave');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const time = floorToTenMinutes(timeInput.value);
+    if (!time) { alert('時刻を入力してください'); return; }
+    const memo = host.querySelector('#memoText').value;
+    if (!memo) { alert('メモを入力してください'); return; }
+    await put('memoLog', { catCode: cat.code, date: state.date, time, memo });
+    renderMemoSection(host, cat, state, refreshCalendar);
     if (refreshCalendar) refreshCalendar();
   });
 }
@@ -420,11 +474,13 @@ async function renderCalendarSection(host, cat, state, container) {
   const dailyRows = await getByIndex('dailyLog', 'byCat', cat.code);
   const medicineRows = await getByIndex('medicineLog', 'byCat', cat.code);
   const excretionRows = await getByIndex('excretionLog', 'byCat', cat.code);
+  const memoRows = await getByIndex('memoLog', 'byCat', cat.code);
   const markedDates = new Set([
     ...feedRows.map(r => r.date),
     ...dailyRows.map(r => r.date),
     ...medicineRows.map(r => r.date),
-    ...excretionRows.map(r => r.date)
+    ...excretionRows.map(r => r.date),
+    ...memoRows.map(r => r.date)
   ]);
 
   const y = state.calendarMonth.getFullYear();

@@ -62,11 +62,11 @@ async function ensureRecipeMaster(entries) {
 export async function renderDashboard(container, callbacks) {
   container.innerHTML = `
     <div class="subtabs">
-      <button data-sub="code" class="subtab active" title="コードマスタ">🏷️</button>
-      <button data-sub="cat" class="subtab" title="猫マスタ">🐱</button>
       <button data-sub="food" class="subtab" title="餌マスタ">🍽️</button>
       <button data-sub="recipe" class="subtab" title="レシピ">📖</button>
       <button data-sub="medicine" class="subtab" title="薬・サプリマスタ">💊</button>
+      <button data-sub="code" class="subtab active" title="コードマスタ">🏷️</button>
+      <button data-sub="cat" class="subtab" title="猫マスタ">🐱</button>
       <button data-sub="io" class="subtab" title="データ入出力">📁</button>
     </div>
     <div id="dashContent"></div>
@@ -234,7 +234,8 @@ async function renderCatMaster(content, callbacks) {
     const feeding = await getByIndex('feedingLog', 'byCat', code);
     const medicine = await getByIndex('medicineLog', 'byCat', code);
     const excretion = await getByIndex('excretionLog', 'byCat', code);
-    if (daily.length > 0 || feeding.length > 0 || medicine.length > 0 || excretion.length > 0) {
+    const memo = await getByIndex('memoLog', 'byCat', code);
+    if (daily.length > 0 || feeding.length > 0 || medicine.length > 0 || excretion.length > 0 || memo.length > 0) {
       alert('この猫には入力済みのデータがあるため削除できません');
       return;
     }
