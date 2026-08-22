@@ -17,8 +17,8 @@ const SECTIONS = [
   { key: 'medicine', icon: '💊', title: 'サプリ・投薬管理' },
   { key: 'poop', icon: '💩', title: 'うんち記録' },
   { key: 'vomit', icon: '🤮', title: 'ゲロ記録' },
+  { key: 'memo', icon: '📝', title: 'メモ' },
   { key: 'daily', icon: '🏥', title: '日々管理' },
-  { key: 'memo', icon: '📝', title: 'メモ' }
 ];
 
 export async function renderCatTab(container, catCode) {
