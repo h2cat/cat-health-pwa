@@ -137,8 +137,8 @@ async function renderCodeMaster(content) {
           <td>${escapeHtml(item.code)}</td>
           <td>${escapeHtml(item.name)}</td>
           <td class="actions">
-            <button class="btn-tiny" data-edit-code="${item.id}">編集</button>
-            <button class="btn-tiny danger" data-del-code="${item.id}">削除</button>
+            <button class="btn-tiny icon-btn" data-edit-code="${item.id}" title="編集">✎</button>
+            <button class="btn-tiny icon-btn danger" data-del-code="${item.id}" title="削除">🗑️</button>
           </td>
         </tr>`;
       });
@@ -235,8 +235,8 @@ async function renderCatMaster(content, callbacks) {
       <div class="kv">性別: ${escapeHtml(cat.sex || '-')}</div>
       <div class="kv">メモ: ${escapeHtml(cat.memo || '-')}</div>
       <div class="actions">
-        <button class="btn-small" data-edit-cat="${escapeHtml(cat.code)}">編集</button>
-        <button class="btn-small danger" data-del-cat="${escapeHtml(cat.code)}">削除</button>
+        <button class="btn-small icon-btn" data-edit-cat="${escapeHtml(cat.code)}" title="編集">✎</button>
+        <button class="btn-small icon-btn danger" data-del-cat="${escapeHtml(cat.code)}" title="削除">🗑️</button>
       </div>
     </div>`;
   });
@@ -338,6 +338,7 @@ async function renderFoodMaster(content) {
       <select id="foodMasterFilterMaker"><option value="">メーカー(すべて)</option>${makerOptionsHtml}</select>
       <select id="foodMasterFilterForm"><option value="">形態(すべて)</option>${formOptionsHtml}</select>
       <select id="foodMasterFilterType"><option value="">種類(すべて)</option>${typeOptionsHtml}</select>
+      <select id="foodMasterFilterDisplay"><option value="">表示/非表示(すべて)</option><option value="visible">表示のみ</option><option value="hidden">非表示のみ</option></select>
     </div>
     <div id="foodListHost"></div>
     <div class="card"><div class="card-title">新規餌を追加</div><div id="foodForm"></div></div>
@@ -348,10 +349,14 @@ async function renderFoodMaster(content) {
   const filterMaker = content.querySelector('#foodMasterFilterMaker');
   const filterForm = content.querySelector('#foodMasterFilterForm');
   const filterType = content.querySelector('#foodMasterFilterType');
+  const filterDisplay = content.querySelector('#foodMasterFilterDisplay');
 
   function getFilteredFoods() {
     const q = (searchInput.value || '').trim().toLowerCase();
     return foods.filter(f => {
+      const visible = f.display !== false;
+      if (filterDisplay.value === 'visible' && !visible) return false;
+      if (filterDisplay.value === 'hidden' && visible) return false;
       if (filterMaker.value && f.makerCode !== filterMaker.value) return false;
       if (filterForm.value && f.formCode !== filterForm.value) return false;
       if (filterType.value && f.typeCode !== filterType.value) return false;
@@ -367,8 +372,9 @@ async function renderFoodMaster(content) {
       const formName = formCodes.find(fc => fc.code === f.formCode);
       const typeName = typeCodes.find(tc => tc.code === f.typeCode);
       const makerName = makerCodes.find(mc => mc.code === f.makerCode);
-      html += `<div class="card">
-        <div class="card-title">${escapeHtml(f.name)} <span class="muted">(${escapeHtml(f.code)})</span></div>
+      const visible = f.display !== false;
+      html += `<div class="card ${visible ? '' : 'hidden-item'}">
+        <div class="card-title">${escapeHtml(f.name)} <span class="muted">(${escapeHtml(f.code)})</span>${visible ? '' : '<span class="hidden-badge">非表示</span>'}</div>
         <div class="kv">略称: ${escapeHtml(f.abbr || '-')}</div>
         <div class="kv">メーカー: ${escapeHtml(makerName ? makerName.name : '-')}</div>
         <div class="kv">100gあたりカロリー: ${escapeHtml(f.caloriePer100g)} kcal</div>
@@ -376,12 +382,22 @@ async function renderFoodMaster(content) {
         <div class="kv">種類: ${escapeHtml(typeName ? typeName.name : '-')}</div>
         <div class="kv">給仕デフォルト量: ${escapeHtml(f.defaultAmountG)} g</div>
         <div class="actions">
-          <button class="btn-small" data-edit-food="${escapeHtml(f.code)}">編集</button>
-          <button class="btn-small danger" data-del-food="${escapeHtml(f.code)}">削除</button>
+          <button class="btn-small" data-toggle-display-food="${escapeHtml(f.code)}">${visible ? '非表示にする' : '表示に戻す'}</button>
+          <button class="btn-small icon-btn" data-edit-food="${escapeHtml(f.code)}" title="編集">✎</button>
+          <button class="btn-small icon-btn danger" data-del-food="${escapeHtml(f.code)}" title="削除">🗑️</button>
         </div>
       </div>`;
     });
     listHost.innerHTML = html || '<div class="muted">該当する餌がありません</div>';
+
+    listHost.querySelectorAll('[data-toggle-display-food]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.toggleDisplayFood;
+      const f = foods.find(x => x.code === code);
+      if (!f) return;
+      f.display = f.display === false ? true : false;
+      await put('foodMaster', f);
+      renderList();
+    }));
 
     listHost.querySelectorAll('[data-edit-food]').forEach(btn => btn.addEventListener('click', async () => {
       const code = btn.dataset.editFood;
@@ -408,6 +424,7 @@ async function renderFoodMaster(content) {
   filterMaker.addEventListener('change', renderList);
   filterForm.addEventListener('change', renderList);
   filterType.addEventListener('change', renderList);
+  filterDisplay.addEventListener('change', renderList);
   renderList();
 
   renderFoodForm(content.querySelector('#foodForm'), null, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content));
@@ -484,41 +501,73 @@ async function renderRecipeMaster(content) {
   }
 
   let html = `<div class="panel"><div class="panel-header"><h3>レシピ</h3></div>
-    <p class="muted">複数の餌を混ぜて与える場合だけここに登録します。単一の餌はそのまま給餌管理画面から選べます。</p>`;
-  recipes.forEach(r => {
-    html += `<div class="card">
-      <div class="card-title">${escapeHtml(r.name)} <span class="muted">(${escapeHtml(r.code)})</span></div>
-      <div class="kv">略称: ${escapeHtml(r.abbr || '-')}</div>
-      <div class="kv">配合: ${escapeHtml(componentsLabel(r.components)) || '-'}</div>
-      <div class="kv">メモ: ${escapeHtml(r.memo || '-')}</div>
-      <div class="actions">
-        <button class="btn-small" data-edit-recipe="${escapeHtml(r.code)}">編集</button>
-        <button class="btn-small danger" data-del-recipe="${escapeHtml(r.code)}">削除</button>
-      </div>
-    </div>`;
-  });
+    <p class="muted">複数の餌を混ぜて与える場合だけここに登録します。単一の餌はそのまま給餌管理画面から選べます。</p>
+    <div class="feed-filter">
+      <select id="recipeMasterFilterDisplay"><option value="">表示/非表示(すべて)</option><option value="visible">表示のみ</option><option value="hidden">非表示のみ</option></select>
+    </div>
+    <div id="recipeListHost"></div>`;
   html += `<div class="card"><div class="card-title">新規レシピを追加</div><div id="recipeForm"></div></div></div>`;
   content.innerHTML = html;
 
+  const listHost = content.querySelector('#recipeListHost');
+  const filterDisplay = content.querySelector('#recipeMasterFilterDisplay');
+
+  function renderList() {
+    const filtered = recipes.filter(r => {
+      const visible = r.display !== false;
+      if (filterDisplay.value === 'visible' && !visible) return false;
+      if (filterDisplay.value === 'hidden' && visible) return false;
+      return true;
+    });
+    let listHtml = '';
+    filtered.forEach(r => {
+      const visible = r.display !== false;
+      listHtml += `<div class="card ${visible ? '' : 'hidden-item'}">
+        <div class="card-title">${escapeHtml(r.name)} <span class="muted">(${escapeHtml(r.code)})</span>${visible ? '' : '<span class="hidden-badge">非表示</span>'}</div>
+        <div class="kv">略称: ${escapeHtml(r.abbr || '-')}</div>
+        <div class="kv">配合: ${escapeHtml(componentsLabel(r.components)) || '-'}</div>
+        <div class="kv">メモ: ${escapeHtml(r.memo || '-')}</div>
+        <div class="actions">
+          <button class="btn-small" data-toggle-display-recipe="${escapeHtml(r.code)}">${visible ? '非表示にする' : '表示に戻す'}</button>
+          <button class="btn-small icon-btn" data-edit-recipe="${escapeHtml(r.code)}" title="編集">✎</button>
+          <button class="btn-small icon-btn danger" data-del-recipe="${escapeHtml(r.code)}" title="削除">🗑️</button>
+        </div>
+      </div>`;
+    });
+    listHost.innerHTML = listHtml || '<div class="muted">該当するレシピがありません</div>';
+
+    listHost.querySelectorAll('[data-toggle-display-recipe]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.toggleDisplayRecipe;
+      const r = recipes.find(x => x.code === code);
+      if (!r) return;
+      r.display = r.display === false ? true : false;
+      await put('recipeMaster', r);
+      renderList();
+    }));
+
+    listHost.querySelectorAll('[data-edit-recipe]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.editRecipe;
+      const r = await get('recipeMaster', code);
+      const formHost = el(`<div class="card"><div class="card-title">編集: ${escapeHtml(r.name)}</div><div></div></div>`);
+      btn.closest('.card').replaceWith(formHost);
+      renderRecipeForm(formHost.querySelector('div:last-child'), r, foods, () => renderRecipeMaster(content));
+    }));
+
+    listHost.querySelectorAll('[data-del-recipe]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.delRecipe;
+      const feeding = await getAll('feedingLog');
+      const used = feeding.some(x => x.sourceType === 'RECIPE' && x.sourceCode === code);
+      if (used) { alert('このレシピは使用中のため削除できません'); return; }
+      if (!confirm('削除しますか？')) return;
+      await remove('recipeMaster', code);
+      renderRecipeMaster(content);
+    }));
+  }
+
+  filterDisplay.addEventListener('change', renderList);
+  renderList();
+
   renderRecipeForm(content.querySelector('#recipeForm'), null, foods, () => renderRecipeMaster(content));
-
-  content.querySelectorAll('[data-edit-recipe]').forEach(btn => btn.addEventListener('click', async () => {
-    const code = btn.dataset.editRecipe;
-    const r = await get('recipeMaster', code);
-    const formHost = el(`<div class="card"><div class="card-title">編集: ${escapeHtml(r.name)}</div><div></div></div>`);
-    btn.closest('.card').replaceWith(formHost);
-    renderRecipeForm(formHost.querySelector('div:last-child'), r, foods, () => renderRecipeMaster(content));
-  }));
-
-  content.querySelectorAll('[data-del-recipe]').forEach(btn => btn.addEventListener('click', async () => {
-    const code = btn.dataset.delRecipe;
-    const feeding = await getAll('feedingLog');
-    const used = feeding.some(x => x.sourceType === 'RECIPE' && x.sourceCode === code);
-    if (used) { alert('このレシピは使用中のため削除できません'); return; }
-    if (!confirm('削除しますか？')) return;
-    await remove('recipeMaster', code);
-    renderRecipeMaster(content);
-  }));
 }
 
 function renderRecipeForm(host, existing, foods, onSaved) {
@@ -574,45 +623,77 @@ async function renderMedicineMaster(content) {
   const units = (await getByIndex('codeMaster', 'byCategory', MED_UNIT_CATEGORY)).filter(u => u.code !== '');
   const effects = (await getByIndex('codeMaster', 'byCategory', MED_EFFECT_CATEGORY)).filter(e => e.code !== '');
 
-  let html = `<div class="panel"><div class="panel-header"><h3>薬・サプリマスタ</h3></div>`;
-  medicines.forEach(m => {
-    const unitName = units.find(u => u.code === m.unitCode);
-    const effectName = effects.find(e => e.code === m.effectCode);
-    const kindLabel = m.kindFlag === 'SUPPLEMENT' ? 'サプリ' : '薬';
-    html += `<div class="card">
-      <div class="card-title">${escapeHtml(m.name)} <span class="muted">(${escapeHtml(m.code)}・${escapeHtml(kindLabel)})</span></div>
-      <div class="kv">略称: ${escapeHtml(m.abbr || '-')}</div>
-      <div class="kv">デフォルト用量: ${m.defaultDose != null && m.defaultDose !== '' ? escapeHtml(m.defaultDose) + escapeHtml(unitName ? unitName.name : '') : '-'}</div>
-      <div class="kv">効能: ${escapeHtml(effectName ? effectName.name : '-')}</div>
-      <div class="kv">メモ: ${escapeHtml(m.memo || '-')}</div>
-      <div class="actions">
-        <button class="btn-small" data-edit-medicine="${escapeHtml(m.code)}">編集</button>
-        <button class="btn-small danger" data-del-medicine="${escapeHtml(m.code)}">削除</button>
-      </div>
-    </div>`;
-  });
+  let html = `<div class="panel"><div class="panel-header"><h3>薬・サプリマスタ</h3></div>
+    <div class="feed-filter">
+      <select id="medicineMasterFilterDisplay"><option value="">表示/非表示(すべて)</option><option value="visible">表示のみ</option><option value="hidden">非表示のみ</option></select>
+    </div>
+    <div id="medicineListHost"></div>`;
   html += `<div class="card"><div class="card-title">新規登録</div><div id="medicineForm"></div></div></div>`;
   content.innerHTML = html;
 
+  const listHost = content.querySelector('#medicineListHost');
+  const filterDisplay = content.querySelector('#medicineMasterFilterDisplay');
+
+  function renderList() {
+    const filtered = medicines.filter(m => {
+      const visible = m.display !== false;
+      if (filterDisplay.value === 'visible' && !visible) return false;
+      if (filterDisplay.value === 'hidden' && visible) return false;
+      return true;
+    });
+    let listHtml = '';
+    filtered.forEach(m => {
+      const unitName = units.find(u => u.code === m.unitCode);
+      const effectName = effects.find(e => e.code === m.effectCode);
+      const kindLabel = m.kindFlag === 'SUPPLEMENT' ? 'サプリ' : '薬';
+      const visible = m.display !== false;
+      listHtml += `<div class="card ${visible ? '' : 'hidden-item'}">
+        <div class="card-title">${escapeHtml(m.name)} <span class="muted">(${escapeHtml(m.code)}・${escapeHtml(kindLabel)})</span>${visible ? '' : '<span class="hidden-badge">非表示</span>'}</div>
+        <div class="kv">略称: ${escapeHtml(m.abbr || '-')}</div>
+        <div class="kv">デフォルト用量: ${m.defaultDose != null && m.defaultDose !== '' ? escapeHtml(m.defaultDose) + escapeHtml(unitName ? unitName.name : '') : '-'}</div>
+        <div class="kv">効能: ${escapeHtml(effectName ? effectName.name : '-')}</div>
+        <div class="kv">メモ: ${escapeHtml(m.memo || '-')}</div>
+        <div class="actions">
+          <button class="btn-small" data-toggle-display-medicine="${escapeHtml(m.code)}">${visible ? '非表示にする' : '表示に戻す'}</button>
+          <button class="btn-small icon-btn" data-edit-medicine="${escapeHtml(m.code)}" title="編集">✎</button>
+          <button class="btn-small icon-btn danger" data-del-medicine="${escapeHtml(m.code)}" title="削除">🗑️</button>
+        </div>
+      </div>`;
+    });
+    listHost.innerHTML = listHtml || '<div class="muted">該当するサプリ・薬がありません</div>';
+
+    listHost.querySelectorAll('[data-toggle-display-medicine]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.toggleDisplayMedicine;
+      const m = medicines.find(x => x.code === code);
+      if (!m) return;
+      m.display = m.display === false ? true : false;
+      await put('medicineMaster', m);
+      renderList();
+    }));
+
+    listHost.querySelectorAll('[data-edit-medicine]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.editMedicine;
+      const m = await get('medicineMaster', code);
+      const formHost = el(`<div class="card"><div class="card-title">編集: ${escapeHtml(m.name)}</div><div></div></div>`);
+      btn.closest('.card').replaceWith(formHost);
+      renderMedicineForm(formHost.querySelector('div:last-child'), m, units, effects, () => renderMedicineMaster(content));
+    }));
+
+    listHost.querySelectorAll('[data-del-medicine]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.delMedicine;
+      const logs = await getAll('medicineLog');
+      const used = logs.some(l => l.medicineCode === code);
+      if (used) { alert('このサプリ・薬は使用中のため削除できません'); return; }
+      if (!confirm('削除しますか？')) return;
+      await remove('medicineMaster', code);
+      renderMedicineMaster(content);
+    }));
+  }
+
+  filterDisplay.addEventListener('change', renderList);
+  renderList();
+
   renderMedicineForm(content.querySelector('#medicineForm'), null, units, effects, () => renderMedicineMaster(content));
-
-  content.querySelectorAll('[data-edit-medicine]').forEach(btn => btn.addEventListener('click', async () => {
-    const code = btn.dataset.editMedicine;
-    const m = await get('medicineMaster', code);
-    const formHost = el(`<div class="card"><div class="card-title">編集: ${escapeHtml(m.name)}</div><div></div></div>`);
-    btn.closest('.card').replaceWith(formHost);
-    renderMedicineForm(formHost.querySelector('div:last-child'), m, units, effects, () => renderMedicineMaster(content));
-  }));
-
-  content.querySelectorAll('[data-del-medicine]').forEach(btn => btn.addEventListener('click', async () => {
-    const code = btn.dataset.delMedicine;
-    const logs = await getAll('medicineLog');
-    const used = logs.some(l => l.medicineCode === code);
-    if (used) { alert('このサプリ・薬は使用中のため削除できません'); return; }
-    if (!confirm('削除しますか？')) return;
-    await remove('medicineMaster', code);
-    renderMedicineMaster(content);
-  }));
 }
 
 function renderMedicineForm(host, existing, units, effects, onSaved) {

@@ -16,14 +16,14 @@
    git add .
    git commit -m "init"
    git branch -M main
-   git remote add origin https://github.com/<your-account>/cat-health-pwa.git
+   git remote add origin https://github.com/h2cat/cat-health-pwa.git
    git push -u origin main
    ```
 
 3. GitHubのリポジトリ画面 → Settings → Pages を開く。
 4. "Build and deployment" の Source を "Deploy from a branch" にし、
    Branch を `main` / `/ (root)` にして Save。
-5. 数十秒〜数分待つと `https://<your-account>.github.io/cat-health-pwa/` で公開される。
+5. 数十秒〜数分待つと `https://h2cat.github.io/cat-health-pwa/` で公開される。
 
 ## iPhoneでホーム画面に追加する
 
