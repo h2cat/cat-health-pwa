@@ -1,22 +1,8 @@
 import { get, put, remove, getByIndex } from './db.js';
-import { escapeHtml, logicalTodayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml, addDaysStr, formatDisplayTime, normalizeEntryTime, quickTimeHourOptions, quickTimeMinuteOptions, nearestQuickTime } from './utils.js';
+import { escapeHtml, logicalTodayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml, addDaysStr, formatDisplayTime, normalizeEntryTime, quickTimeHourOptions, quickTimeMinuteOptions, nearestQuickTime, normalizeFavoriteSourceCodes } from './utils.js';
 import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY, FOOD_FORM_CATEGORY, FOOD_TYPE_CATEGORY, MAKER_CATEGORY } from './dashboard.js';
 
-// 時刻入力欄＋クイック選択（時・分プルダウン）＋夜間チェックボックスのHTMLを組み立てる
-function buildTimeFieldHtml(idPrefix, timeValue, nightChecked) {
-  const hourOptions = quickTimeHourOptions().map(h => `<option value="${h}">${h}</option>`).join('');
-  const minOptions = quickTimeMinuteOptions().map(m => `<option value="${m}">${m}</option>`).join('');
-  return `<div class="field"><label>時刻（10分単位に切り捨て・手入力可）</label>
-    <input id="${idPrefix}Time" type="time" step="600" value="${escapeHtml(timeValue)}">
-    <div class="quick-time">
-      <select id="${idPrefix}TimeHourQuick" class="quick-time-select">${hourOptions}</select>時
-      <select id="${idPrefix}TimeMinQuick" class="quick-time-select">${minOptions}</select>分
-    </div>
-    <label class="chk"><input type="checkbox" id="${idPrefix}NightChk" ${nightChecked ? 'checked' : ''}> 夜間（時刻不明）</label>
-  </div>`;
-}
-
-// buildTimeFieldHtmlで組み立てたUIの挙動を配線する。
+// buildDateTimeFieldHtmlで組み立てたUIの挙動を配線する。
 // initialDisplayHHMM: クイック選択の初期値を決めるための基準時刻（"HH:MM"、通常表記）。夜間や未指定ならnullで現在時刻に近い値を使う。
 function wireTimeField(host, idPrefix, initialDisplayHHMM) {
   const timeInput = host.querySelector(`#${idPrefix}Time`);
@@ -51,6 +37,27 @@ function wireTimeField(host, idPrefix, initialDisplayHHMM) {
 // 日付入力欄のHTML（すべての入力画面で日付を編集可能にするため共通化）
 function buildDateFieldHtml(idPrefix, dateValue) {
   return `<div class="field"><label>日付</label><input id="${idPrefix}Date" type="date" value="${escapeHtml(dateValue)}"></div>`;
+}
+
+// 日付＋時刻の入力欄（餈・薬・うんち/ゲロ・メモ共通）: 「日時」タイトル＋横に夜間チェックボックス、
+// その下に日付と時刻セレクトを横並びで表示する。
+function buildDateTimeFieldHtml(idPrefix, dateValue, timeValue, nightChecked) {
+  const hourOptions = quickTimeHourOptions().map(h => `<option value="${h}">${h}</option>`).join('');
+  const minOptions = quickTimeMinuteOptions().map(m => `<option value="${m}">${m}</option>`).join('');
+  return `<div class="field">
+    <div class="field-title-row">
+      <label>日時</label>
+      <label class="chk"><input type="checkbox" id="${idPrefix}NightChk" ${nightChecked ? 'checked' : ''}> 夜間（時刻不明）</label>
+    </div>
+    <div class="datetime-row">
+      <input id="${idPrefix}Date" type="date" class="date-input required-input" value="${escapeHtml(dateValue)}">
+      <input id="${idPrefix}Time" type="time" step="600" value="${escapeHtml(timeValue)}" style="display:none">
+      <div class="quick-time">
+        <select id="${idPrefix}TimeHourQuick" class="quick-time-select required-input">${hourOptions}</select>時
+        <select id="${idPrefix}TimeMinQuick" class="quick-time-select required-input">${minOptions}</select>分
+      </div>
+    </div>
+  </div>`;
 }
 
 const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
@@ -187,21 +194,26 @@ async function renderFeedingSection(host, cat, state, refreshCalendar, rerenderA
       <tbody>${rowsHtml || '<tr><td colspan="7" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
         ${editingEntry ? '<div class="editing-banner">記録を編集中<button id="feedCancelEdit" class="btn-tiny">キャンセル</button></div>' : ''}
-        <div class="field"><label>種別</label>
-          <select id="feedKind">
-            <option value="INTAKE" ${editingEntry && editingEntry.kind === 'INTAKE' ? 'selected' : ''}>摂取</option>
-            <option value="SERVE" ${editingEntry && editingEntry.kind === 'SERVE' ? 'selected' : ''}>提供</option>
-          </select>
+        <div class="field">
+          <div class="chk-list">
+            <label class="chk"><input type="radio" name="feedKind" value="INTAKE" ${!editingEntry || editingEntry.kind === 'INTAKE' ? 'checked' : ''}> 摂取</label>
+            <label class="chk"><input type="radio" name="feedKind" value="SERVE" ${editingEntry && editingEntry.kind === 'SERVE' ? 'checked' : ''}> 提供</label>
+          </div>
         </div>
-        ${buildDateFieldHtml('feed', editingEntry ? editingEntry.date : state.date)}
-        ${buildTimeFieldHtml('feed', editingEntry ? (/^\d{1,2}:\d{2}$/.test(formatDisplayTime(editingEntry.time)) ? formatDisplayTime(editingEntry.time) : '') : floorToTenMinutes(nowTimeStr()), editingEntry && formatDisplayTime(editingEntry.time) === '夜間')}
+        ${buildDateTimeFieldHtml('feed', editingEntry ? editingEntry.date : state.date, editingEntry ? (/^\d{1,2}:\d{2}$/.test(formatDisplayTime(editingEntry.time)) ? formatDisplayTime(editingEntry.time) : '') : floorToTenMinutes(nowTimeStr()), editingEntry && formatDisplayTime(editingEntry.time) === '夜間')}
         <div class="feed-filter">
           <input id="feedSearch" type="text" placeholder="餌名で検索">
           <select id="filterMaker"><option value="">メーカー(すべて)</option>${makerOptionsHtml}</select>
           <select id="filterForm"><option value="">形態(すべて)</option>${formOptionsHtml}</select>
           <select id="filterType"><option value="">種類(すべて)</option>${typeOptionsHtml}</select>
         </div>
-        <div class="field"><label id="feedSourceLabel">餌・レシピ</label><select id="feedSource"></select></div>
+        <div class="field">
+          <div class="chk-list feed-source-toggle">
+            <label class="chk"><input type="checkbox" id="feedShowFood" checked> 餌</label>
+            <label class="chk"><input type="checkbox" id="feedShowRecipe" checked> レシピ</label>
+          </div>
+          <select id="feedSource"></select>
+        </div>
         <div class="field"><label id="feedAmountLabel">量(g)</label><input id="feedAmount" type="number" step="0.1" value="${editingEntry ? (editingEntry.kind === 'SERVE' ? (editingEntry.providedAmount != null ? editingEntry.providedAmount : '') : (editingEntry.eatenAmount != null ? editingEntry.eatenAmount : '')) : ''}"></div>
         <div class="field"><label>メモ</label><input id="feedMemo" value="${editingEntry ? escapeHtml(editingEntry.memo || '') : ''}"></div>
         <button id="feedSave" class="btn-primary">${editingEntry ? '更新' : '入力確定'}</button>
@@ -216,18 +228,27 @@ async function renderFeedingSection(host, cat, state, refreshCalendar, rerenderA
   const filterType = host.querySelector('#filterType');
   const amountInput = host.querySelector('#feedAmount');
   const amountLabel = host.querySelector('#feedAmountLabel');
-  const sourceLabel = host.querySelector('#feedSourceLabel');
-  const kindSelect = host.querySelector('#feedKind');
+  const showFoodChk = host.querySelector('#feedShowFood');
+  const showRecipeChk = host.querySelector('#feedShowRecipe');
+  const kindRadios = host.querySelectorAll('input[name="feedKind"]');
+  const kindSelect = {
+    get value() { const c = host.querySelector('input[name="feedKind"]:checked'); return c ? c.value : 'INTAKE'; },
+    addEventListener(evt, fn) { kindRadios.forEach(r => r.addEventListener(evt, fn)); }
+  };
   const dateInput = host.querySelector('#feedDate');
   const memoInput = host.querySelector('#feedMemo');
   const { timeInput, nightChk } = wireTimeField(host, 'feed', editingEntry && formatDisplayTime(editingEntry.time) !== '夜間' ? formatDisplayTime(editingEntry.time) : null);
 
   // 非表示(display:false)の餌・レシピは選択肢から除外する。ただし編集中エントリで
   // 既に選ばれているものは、選択が消えてしまわないよう表示し続ける。
+  // 「餌」「レシピ」チェックボックスが外れている場合も同様に除外する（編集中の選択は維持）。
+  // 検索・メーカー/形態/種類フィルタが効くのは「餌」「レシピ」の通常リストのみ（お気に入りグループは対象外）。
   function getFilteredFoods() {
     const q = (searchInput.value || '').trim().toLowerCase();
+    const isEditingFood = editingEntry && editingEntry.sourceType === 'FOOD';
+    if (!showFoodChk.checked && !isEditingFood) return [];
     return allFoods.filter(f => {
-      if (f.display === false && !(editingEntry && editingEntry.sourceType === 'FOOD' && editingEntry.sourceCode === f.code)) return false;
+      if (f.display === false && !(isEditingFood && editingEntry.sourceCode === f.code)) return false;
       if (filterMaker.value && f.makerCode !== filterMaker.value) return false;
       if (filterForm.value && f.formCode !== filterForm.value) return false;
       if (filterType.value && f.typeCode !== filterType.value) return false;
@@ -237,20 +258,58 @@ async function renderFeedingSection(host, cat, state, refreshCalendar, rerenderA
   }
   function getFilteredRecipes() {
     const q = (searchInput.value || '').trim().toLowerCase();
+    const isEditingRecipe = editingEntry && editingEntry.sourceType === 'RECIPE';
+    if (!showRecipeChk.checked && !isEditingRecipe) return [];
     return allRecipes.filter(r => {
-      if (r.display === false && !(editingEntry && editingEntry.sourceType === 'RECIPE' && editingEntry.sourceCode === r.code)) return false;
+      if (r.display === false && !(isEditingRecipe && editingEntry.sourceCode === r.code)) return false;
       if (q && !(r.name || '').toLowerCase().includes(q)) return false;
       return true;
     });
   }
+  const favSourceCodes = normalizeFavoriteSourceCodes(cat);
+  // 「お気に入り」グループの中身: 前回入力→お気に入り登録順。重複は除去。
+  // 検索・各種フィルタの影響は受けないが、非表示(display:false)や餌/レシピ表示チェックボックスは尊重する
+  // （編集中エントリの現在の選択は維持）。
+  function buildFavoriteItems() {
+    const isEditingFood = editingEntry && editingEntry.sourceType === 'FOOD';
+    const isEditingRecipe = editingEntry && editingEntry.sourceType === 'RECIPE';
+    const candidates = lastSel ? [lastSel, ...favSourceCodes] : [...favSourceCodes];
+    const seen = new Set();
+    const items = [];
+    candidates.forEach(v => {
+      if (!v || seen.has(v)) return;
+      const type = v.slice(0, 1);
+      const code = v.slice(2);
+      if (type === 'F') {
+        if (!showFoodChk.checked && !isEditingFood) return;
+        const f = allFoods.find(x => x.code === code);
+        if (!f) return;
+        if (f.display === false && !(isEditingFood && editingEntry.sourceCode === code)) return;
+        items.push({ value: v, name: f.name });
+        seen.add(v);
+      } else if (type === 'R') {
+        if (!showRecipeChk.checked && !isEditingRecipe) return;
+        const r = allRecipes.find(x => x.code === code);
+        if (!r) return;
+        if (r.display === false && !(isEditingRecipe && editingEntry.sourceCode === code)) return;
+        items.push({ value: v, name: r.name });
+        seen.add(v);
+      }
+    });
+    return items;
+  }
   function buildSourceOptionsHtml() {
-    const foods = getFilteredFoods();
-    const recipes = getFilteredRecipes();
-    const recipeOptions = recipes.map(r => `<option value="R:${escapeHtml(r.code)}">${escapeHtml(r.name)}</option>`).join('');
-    const foodOptions = foods.map(f => `<option value="F:${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('');
+    const favItems = buildFavoriteItems();
+    const favValueSet = new Set(favItems.map(it => it.value));
+    const foods = getFilteredFoods().filter(f => !favValueSet.has(`F:${f.code}`));
+    const recipes = getFilteredRecipes().filter(r => !favValueSet.has(`R:${r.code}`));
     let html = '<option value="">（未選択）</option>';
-    if (recipes.length) html += `<optgroup label="レシピ">${recipeOptions}</optgroup>`;
-    if (foods.length) html += `<optgroup label="餌">${foodOptions}</optgroup>`;
+    if (favItems.length) {
+      const favOptions = favItems.map(it => `<option value="${escapeHtml(it.value)}">${escapeHtml(it.name)}</option>`).join('');
+      html += `<optgroup label="お気に入り">${favOptions}</optgroup>`;
+    }
+    if (foods.length) html += `<optgroup label="餌">${foods.map(f => `<option value="F:${escapeHtml(f.code)}">${escapeHtml(f.name)}</option>`).join('')}</optgroup>`;
+    if (recipes.length) html += `<optgroup label="レシピ">${recipes.map(r => `<option value="R:${escapeHtml(r.code)}">${escapeHtml(r.name)}</option>`).join('')}</optgroup>`;
     return html;
   }
   function rebuildSourceSelect(preserveValue) {
@@ -285,6 +344,9 @@ async function renderFeedingSection(host, cat, state, refreshCalendar, rerenderA
     if (t === 'F') {
       const f = allFoods.find(x => x.code === c);
       if (f && f.defaultAmountG) amountInput.value = f.defaultAmountG;
+    } else if (t === 'R') {
+      const r = allRecipes.find(x => x.code === c);
+      if (r && r.defaultAmountG) amountInput.value = r.defaultAmountG;
     }
   }
   sourceSelect.addEventListener('change', applyDefault);
@@ -292,11 +354,15 @@ async function renderFeedingSection(host, cat, state, refreshCalendar, rerenderA
 
   searchInput.addEventListener('input', () => { rebuildSourceSelect(); applyDefault(); });
   [filterMaker, filterForm, filterType].forEach(sel => sel.addEventListener('change', () => { rebuildSourceSelect(); applyDefault(); }));
+  [showFoodChk, showRecipeChk].forEach(chk => chk.addEventListener('change', () => { rebuildSourceSelect(); applyDefault(); }));
 
   function updateKindUI() {
     const isIntake = kindSelect.value === 'INTAKE';
-    amountLabel.textContent = isIntake ? '摂取量(g)' : '提供量(g)（任意）';
-    sourceLabel.textContent = isIntake ? '餌・レシピ' : '餌・レシピ（任意）';
+    amountLabel.textContent = isIntake ? '摂取量(g)' : '提供量(g)';
+    // 摂取(INTAKE)のときだけ餌・レシピの選択と量の入力が必須になるため、
+    // ラベルに（任意）と書く代わりにinputの背景で必須/任意を示す。
+    amountInput.classList.toggle('required-input', isIntake);
+    sourceSelect.classList.toggle('required-input', isIntake);
   }
   kindSelect.addEventListener('change', updateKindUI);
   updateKindUI();
@@ -434,8 +500,7 @@ async function renderMedicineSection(host, cat, state, refreshCalendar, rerender
       <tbody>${rowsHtml || '<tr><td colspan="7" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
         ${editingEntry ? '<div class="editing-banner">記録を編集中<button id="medCancelEdit" class="btn-tiny">キャンセル</button></div>' : ''}
-        ${buildDateFieldHtml('med', editingEntry ? editingEntry.date : state.date)}
-        ${buildTimeFieldHtml('med', editingEntry ? (/^\d{1,2}:\d{2}$/.test(formatDisplayTime(editingEntry.time)) ? formatDisplayTime(editingEntry.time) : '') : floorToTenMinutes(nowTimeStr()), editingEntry && formatDisplayTime(editingEntry.time) === '夜間')}
+        ${buildDateTimeFieldHtml('med', editingEntry ? editingEntry.date : state.date, editingEntry ? (/^\d{1,2}:\d{2}$/.test(formatDisplayTime(editingEntry.time)) ? formatDisplayTime(editingEntry.time) : '') : floorToTenMinutes(nowTimeStr()), editingEntry && formatDisplayTime(editingEntry.time) === '夜間')}
         <div class="feed-filter">
           <input id="medSearch" type="text" placeholder="名前で検索">
           <select id="filterKind">
@@ -444,7 +509,7 @@ async function renderMedicineSection(host, cat, state, refreshCalendar, rerender
             <option value="SUPPLEMENT">サプリ</option>
           </select>
         </div>
-        <div class="field"><label>サプリ・薬</label><select id="medSelect"></select></div>
+        <div class="field"><label>サプリ・薬</label><select id="medSelect" class="required-input"></select></div>
         <div class="field"><label id="medDoseLabel">用量</label><input id="medDose" type="number" step="0.01" value="${editingEntry && editingEntry.dose != null ? editingEntry.dose : ''}"></div>
         <div class="field"><label>メモ</label><input id="medMemo" value="${editingEntry ? escapeHtml(editingEntry.memo || '') : ''}"></div>
         <button id="medSave" class="btn-primary">${editingEntry ? '更新' : '入力確定'}</button>
@@ -589,8 +654,7 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
       <table class="tbl"><thead><tr><th>時刻</th><th>状態</th><th>メモ</th><th></th></tr></thead>
       <tbody>${rowsHtml || '<tr><td colspan="4" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
-        ${buildDateFieldHtml('exc', state.date)}
-        ${buildTimeFieldHtml('exc', floorToTenMinutes(nowTimeStr()), false)}
+        ${buildDateTimeFieldHtml('exc', state.date, floorToTenMinutes(nowTimeStr()), false)}
         <div class="field"><label>状態（複数選択可）</label><div class="chk-list">${stateChecksHtml || '<span class="muted">未登録です</span>'}</div></div>
         <div class="field"><label>メモ</label><input id="excMemo"></div>
         <button id="excSave" class="btn-primary">入力確定</button>
@@ -643,9 +707,8 @@ async function renderMemoSection(host, cat, state, refreshCalendar, rerenderAll)
       <table class="tbl"><thead><tr><th>時刻</th><th>メモ</th><th></th></tr></thead>
       <tbody>${rowsHtml || '<tr><td colspan="3" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
-        ${buildDateFieldHtml('memo', state.date)}
-        ${buildTimeFieldHtml('memo', floorToTenMinutes(nowTimeStr()), false)}
-        <div class="field"><label>メモ</label><input id="memoText"></div>
+        ${buildDateTimeFieldHtml('memo', state.date, floorToTenMinutes(nowTimeStr()), false)}
+        <div class="field"><label>メモ</label><input id="memoText" class="required-input"></div>
         <button id="memoSave" class="btn-primary">入力確定</button>
       </div>
     </div>

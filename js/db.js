@@ -66,11 +66,14 @@ function tx(storeNames, mode) {
 
 export async function getAll(storeName) {
   const t = await tx(storeName, 'readonly');
-  return new Promise((resolve, reject) => {
+  const rows = await new Promise((resolve, reject) => {
     const req = t.objectStore(storeName).getAll();
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+  // seq（登録順を表す値）を持つレコードは登録順に並べ替える。
+  // seqを持たないストア（ログ系など）のレコードは全て0扱いになり、安定ソートにより元の並び順のまま変化しない。
+  return rows.slice().sort((a, b) => ((a && a.seq) || 0) - ((b && b.seq) || 0));
 }
 
 export async function get(storeName, key) {

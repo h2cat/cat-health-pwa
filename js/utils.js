@@ -161,3 +161,12 @@ export function memoFlagHtml(memo) {
   if (!memo) return '';
   return `<span class="memo-flag" title="${escapeHtml(memo)}">💬</span>`;
 }
+
+// 猫マスタのお気に入り餌・レシピを "F:code"（餌）/ "R:code"（レシピ）形式の配列に正規化する。
+// 旧データ（favoriteFoodCodesのみ・プレフィックス無し＝餌固定）にもフォールバック対応。
+export function normalizeFavoriteSourceCodes(cat) {
+  if (!cat) return [];
+  if (Array.isArray(cat.favoriteSourceCodes)) return cat.favoriteSourceCodes;
+  if (Array.isArray(cat.favoriteFoodCodes)) return cat.favoriteFoodCodes.map(c => `F:${c}`);
+  return [];
+}

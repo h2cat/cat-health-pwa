@@ -1,5 +1,5 @@
 import { getAll, get, put, remove, getByIndex, clearStore, STORES } from './db.js';
-import { escapeHtml, el, parseCaloriePer100gInput } from './utils.js';
+import { escapeHtml, el, parseCaloriePer100gInput, normalizeFavoriteSourceCodes } from './utils.js';
 import { initialCodeMaster, initialCatMaster, initialFoodMaster, initialMedicineMaster, initialRecipeMaster } from './initial-data.js';
 
 export const FOOD_FORM_CATEGORY = 'FOOD_FORM';
@@ -12,6 +12,14 @@ export const MED_EFFECT_CATEGORY = 'MED_EFFECT';
 export const DAILY_EVENT_CATEGORY = 'DAILY_EVENT';
 
 let expandedCodeCategory = null; // コードマスタのアコーディオンで開いている大分類
+let addingCodeCategory = null; // コードマスタで「＋コード追加」の入力行を表示中の大分類
+let editingCodeId = null; // コードマスタでインライン編集中の行のid
+let showNewFoodForm = false; // 餌マスタで「＋新規作成」フォームを開いているか
+let showNewRecipeForm = false; // レシピマスタで「＋新規作成」フォームを開いているか
+let expandedFoodCode = null; // 餌マスタのアコーディオンで開いている餌のcode
+let expandedRecipeCode = null; // レシピマスタのアコーディオンで開いているレシピのcode
+let showNewMedicineForm = false; // 薬・サプリマスタで「＋新規作成」フォームを開いているか
+let expandedMedicineCode = null; // 薬・サプリマスタのアコーディオンで開いている薬・サプリのcode
 
 // 初回起動時／アップデート時のマスタ種seed
 // js/initial-data.js の内容のうち、「まだ登録されていないもの」だけを追加する。
@@ -23,6 +31,40 @@ export async function seedDefaults() {
   await ensureMedicineMaster(initialMedicineMaster);
   await ensureRecipeMaster(initialRecipeMaster);
   await migrateMedicineKindFlag();
+  await reorderSeededSeq('foodMaster', initialFoodMaster);
+  await reorderSeededSeq('recipeMaster', initialRecipeMaster);
+  await reorderSeededSeq('medicineMaster', initialMedicineMaster);
+  await reorderSeededSeq('catMaster', initialCatMaster);
+}
+
+// 新規追加時のseqはDate.now()（十分大きい値）を使うため、それより十分小さいこの値未満のseqは
+// 「登録順ではない旧移行処理で割り振られた値」とみなして振り直し対象にする。
+const LEGACY_SEQ_THRESHOLD = 1_000_000;
+
+// seq(登録順を表す値)を、initial-data.js内の記載順（＝実際に登録された意味のある並び）を基準に振り直す（1回限りの移行処理）。
+// 対象はseq未設定、または旧移行処理（コード順で割り振られたもの）のレコードのみ。
+// Date.now()ベースのseq(この機能追加後に新規追加されたもの)は十分大きい値なので対象にならない。
+async function reorderSeededSeq(storeName, entries) {
+  const seededCodes = new Set(entries.map(e => e.code));
+  let n = 1;
+  // 1) initial-data.js記載順に振り直す
+  for (const e of entries) {
+    const row = await get(storeName, e.code);
+    if (row && (row.seq == null || row.seq < LEGACY_SEQ_THRESHOLD)) {
+      row.seq = n;
+      await put(storeName, row);
+    }
+    n++;
+  }
+  // 2) 初期データに無い自作の追加分（旧移行処理のseqが残っているもの）は、初期データの後ろに回す
+  const rows = await getAll(storeName);
+  for (const row of rows) {
+    if (!seededCodes.has(row.code) && (row.seq == null || row.seq < LEGACY_SEQ_THRESHOLD)) {
+      row.seq = n;
+      await put(storeName, row);
+      n++;
+    }
+  }
 }
 
 // 薬・サプリのフラグ(kindFlag)未設定の既存データを「薬」に一括設定する（1回限りの移行処理）
@@ -77,10 +119,10 @@ async function ensureRecipeMaster(entries) {
 export async function renderDashboard(container, callbacks) {
   container.innerHTML = `
     <div class="subtabs">
-      <button data-sub="food" class="subtab" title="餌マスタ">🍽️</button>
+      <button data-sub="food" class="subtab active" title="餌マスタ">🍽️</button>
       <button data-sub="recipe" class="subtab" title="レシピ">📖</button>
       <button data-sub="medicine" class="subtab" title="薬・サプリマスタ">💊</button>
-      <button data-sub="code" class="subtab active" title="コードマスタ">🏷️</button>
+      <button data-sub="code" class="subtab" title="コードマスタ">🏷️</button>
       <button data-sub="cat" class="subtab" title="猫マスタ">🐱</button>
       <button data-sub="io" class="subtab" title="データ入出力">📁</button>
     </div>
@@ -101,7 +143,7 @@ export async function renderDashboard(container, callbacks) {
     else if (sub === 'medicine') await renderMedicineMaster(content);
     else if (sub === 'io') await renderIO(content, callbacks);
   }
-  await showSub('code');
+  await showSub('food');
 }
 
 // ===== コードマスタ =====
@@ -120,7 +162,7 @@ async function renderCodeMaster(content) {
       <button id="addCategoryBtn" class="btn-small">＋大分類追加</button>
     </div>`;
 
-  Object.keys(categories).sort().forEach(cat => {
+  Object.keys(categories).forEach(cat => {
     const c = categories[cat];
     const headerName = c.header ? c.header.name : cat;
     const isOpen = expandedCodeCategory === cat;
@@ -130,12 +172,38 @@ async function renderCodeMaster(content) {
         <span class="accordion-arrow">${isOpen ? '▼' : '▶'}</span>
       </button>`;
     if (isOpen) {
-      html += `<div class="accordion-body">
-        <table class="tbl"><tbody>`;
+      html += `<div class="accordion-body">`;
+      if (addingCodeCategory === cat) {
+        html += `<div class="card">
+          <div class="card-title">コード追加</div>
+          <div class="field"><label>コード</label><input id="nc_code" type="text" class="required-input"></div>
+          <div class="field"><label>名称</label><input id="nc_name" type="text" class="required-input"></div>
+          <div class="field"><label>略称</label><input id="nc_abbr" type="text"></div>
+          <div class="form-actions">
+            <button id="nc_save" class="btn-primary">追加</button>
+            <button id="nc_cancel" class="btn-small">キャンセル</button>
+          </div>
+        </div>`;
+      }
+      const editingItem = c.items.find(i => i.id === editingCodeId);
+      if (editingItem) {
+        html += `<div class="card">
+          <div class="card-title">コード編集: ${escapeHtml(editingItem.code)}</div>
+          <div class="field"><label>コード</label><input value="${escapeHtml(editingItem.code)}" disabled></div>
+          <div class="field"><label>名称</label><input id="ec_name" type="text" class="required-input" value="${escapeHtml(editingItem.name)}"></div>
+          <div class="field"><label>略称</label><input id="ec_abbr" type="text" value="${escapeHtml(editingItem.abbr || '')}"></div>
+          <div class="form-actions">
+            <button id="ec_save" class="btn-primary" data-save-code="${editingItem.id}">更新</button>
+            <button id="ec_cancel" class="btn-small">キャンセル</button>
+          </div>
+        </div>`;
+      }
+      html += `<table class="tbl"><thead><tr><th>コード</th><th>名称</th><th>略称</th><th></th></tr></thead><tbody>`;
       c.items.forEach(item => {
         html += `<tr>
           <td>${escapeHtml(item.code)}</td>
           <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.abbr || '-')}</td>
           <td class="actions">
             <button class="btn-tiny icon-btn" data-edit-code="${item.id}" title="編集">✎</button>
             <button class="btn-tiny icon-btn danger" data-del-code="${item.id}" title="削除">🗑️</button>
@@ -144,7 +212,7 @@ async function renderCodeMaster(content) {
       });
       html += `</tbody></table>
         <div class="actions">
-          <button class="btn-small" data-add-code="${escapeHtml(cat)}">＋コード追加</button>
+          ${addingCodeCategory === cat ? '' : `<button class="btn-small" data-add-code="${escapeHtml(cat)}">＋コード追加</button>`}
           <button class="btn-small danger" data-del-header="${escapeHtml(cat)}">大分類削除</button>
         </div>
       </div>`;
@@ -168,30 +236,61 @@ async function renderCodeMaster(content) {
   content.querySelectorAll('[data-toggle-category]').forEach(btn => btn.addEventListener('click', () => {
     const cat = btn.dataset.toggleCategory;
     expandedCodeCategory = expandedCodeCategory === cat ? null : cat;
+    addingCodeCategory = null;
+    editingCodeId = null;
     renderCodeMaster(content);
   }));
 
-  content.querySelectorAll('[data-add-code]').forEach(btn => btn.addEventListener('click', async () => {
-    const cat = btn.dataset.addCode;
-    const code = prompt('コードを入力してください');
-    if (!code) return;
+  content.querySelectorAll('[data-add-code]').forEach(btn => btn.addEventListener('click', () => {
+    addingCodeCategory = btn.dataset.addCode;
+    editingCodeId = null;
+    renderCodeMaster(content);
+  }));
+
+  const ncSave = content.querySelector('#nc_save');
+  if (ncSave) ncSave.addEventListener('click', async () => {
+    const cat = addingCodeCategory;
+    const code = content.querySelector('#nc_code').value.trim();
+    const name = content.querySelector('#nc_name').value.trim();
+    const abbr = content.querySelector('#nc_abbr').value.trim();
+    if (!code || !name) { alert('コードと名称は必須です'); return; }
     const exists = categories[cat].items.some(i => i.code === code);
     if (exists) { alert('既に存在するコードです'); return; }
-    const name = prompt('名称を入力してください');
-    if (!name) return;
-    await put('codeMaster', { category: cat, code, name });
+    await put('codeMaster', { category: cat, code, name, abbr });
+    addingCodeCategory = null;
+    renderCodeMaster(content);
+  });
+  const ncCancel = content.querySelector('#nc_cancel');
+  if (ncCancel) ncCancel.addEventListener('click', () => {
+    addingCodeCategory = null;
+    renderCodeMaster(content);
+  });
+
+  content.querySelectorAll('[data-edit-code]').forEach(btn => btn.addEventListener('click', () => {
+    editingCodeId = Number(btn.dataset.editCode);
+    addingCodeCategory = null;
     renderCodeMaster(content);
   }));
 
-  content.querySelectorAll('[data-edit-code]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = Number(btn.dataset.editCode);
-    const row = await get('codeMaster', id);
-    const name = prompt('名称を編集', row.name);
-    if (!name) return;
-    row.name = name;
-    await put('codeMaster', row);
+  const ecCancel = content.querySelector('#ec_cancel');
+  if (ecCancel) ecCancel.addEventListener('click', () => {
+    editingCodeId = null;
     renderCodeMaster(content);
-  }));
+  });
+
+  const ecSave = content.querySelector('#ec_save');
+  if (ecSave) ecSave.addEventListener('click', async () => {
+    const id = Number(ecSave.dataset.saveCode);
+    const row = await get('codeMaster', id);
+    const name = content.querySelector('#ec_name').value.trim();
+    const abbr = content.querySelector('#ec_abbr').value.trim();
+    if (!name) { alert('名称は必須です'); return; }
+    row.name = name;
+    row.abbr = abbr;
+    await put('codeMaster', row);
+    editingCodeId = null;
+    renderCodeMaster(content);
+  });
 
   content.querySelectorAll('[data-del-code]').forEach(btn => btn.addEventListener('click', async () => {
     const id = Number(btn.dataset.delCode);
@@ -225,14 +324,27 @@ async function renderCodeMaster(content) {
 // ===== 猫マスタ =====
 async function renderCatMaster(content, callbacks) {
   const cats = await getAll('catMaster');
+  const foods = await getAll('foodMaster');
+  const recipes = await getAll('recipeMaster');
+  const sourceName = srcCode => {
+    if (srcCode.startsWith('R:')) {
+      const r = recipes.find(x => x.code === srcCode.slice(2));
+      return r ? r.name : srcCode.slice(2);
+    }
+    const code = srcCode.startsWith('F:') ? srcCode.slice(2) : srcCode;
+    const f = foods.find(x => x.code === code);
+    return f ? f.name : code;
+  };
 
   let html = `<div class="panel">
     <div class="panel-header"><h3>猫マスタ</h3></div>`;
   cats.forEach(cat => {
+    const favs = normalizeFavoriteSourceCodes(cat);
     html += `<div class="card">
       <div class="card-title">${escapeHtml(cat.name)} <span class="muted">(${escapeHtml(cat.code)})</span></div>
       <div class="kv">生年月日: ${escapeHtml(cat.birthDate || '-')}</div>
       <div class="kv">性別: ${escapeHtml(cat.sex || '-')}</div>
+      <div class="kv">お気に入り餌・レシピ: ${favs.length ? escapeHtml(favs.map(sourceName).join('、')) : '-'}</div>
       <div class="kv">メモ: ${escapeHtml(cat.memo || '-')}</div>
       <div class="actions">
         <button class="btn-small icon-btn" data-edit-cat="${escapeHtml(cat.code)}" title="編集">✎</button>
@@ -246,14 +358,14 @@ async function renderCatMaster(content, callbacks) {
   </div></div>`;
   content.innerHTML = html;
 
-  renderCatForm(content.querySelector('#catForm'), null, callbacks, () => renderCatMaster(content, callbacks));
+  renderCatForm(content.querySelector('#catForm'), null, callbacks, () => renderCatMaster(content, callbacks), foods, recipes, () => renderCatMaster(content, callbacks));
 
   content.querySelectorAll('[data-edit-cat]').forEach(btn => btn.addEventListener('click', async () => {
     const code = btn.dataset.editCat;
     const cat = await get('catMaster', code);
     const formHost = el(`<div class="card"><div class="card-title">猫編集: ${escapeHtml(cat.name)}</div><div></div></div>`);
     btn.closest('.card').replaceWith(formHost);
-    renderCatForm(formHost.querySelector('div:last-child'), cat, callbacks, () => renderCatMaster(content, callbacks));
+    renderCatForm(formHost.querySelector('div:last-child'), cat, callbacks, () => renderCatMaster(content, callbacks), foods, recipes, () => renderCatMaster(content, callbacks));
   }));
 
   content.querySelectorAll('[data-del-cat]').forEach(btn => btn.addEventListener('click', async () => {
@@ -274,12 +386,32 @@ async function renderCatMaster(content, callbacks) {
   }));
 }
 
-function renderCatForm(host, existing, callbacks, onSaved) {
+function renderCatForm(host, existing, callbacks, onSaved, foods, recipes, onCancel) {
   const isEdit = !!existing;
+  const foodList = foods || [];
+  const recipeList = recipes || [];
+  const existingFavs = isEdit ? normalizeFavoriteSourceCodes(existing) : [];
+
+  function favOptionsHtml(selectedValue) {
+    let optHtml = '<option value="">（未選択）</option>';
+    const recipeOpts = recipeList
+      // 非表示のレシピでも、既にお気に入り登録済みなら選択肢から消えないよう表示する
+      .filter(r => r.display !== false || `R:${r.code}` === selectedValue)
+      .map(r => `<option value="R:${escapeHtml(r.code)}" ${`R:${r.code}` === selectedValue ? 'selected' : ''}>${escapeHtml(r.name)}</option>`)
+      .join('');
+    const foodOpts = foodList
+      // 非表示の餌でも、既にお気に入り登録済みなら選択肢から消えないよう表示する
+      .filter(f => f.display !== false || `F:${f.code}` === selectedValue)
+      .map(f => `<option value="F:${escapeHtml(f.code)}" ${`F:${f.code}` === selectedValue ? 'selected' : ''}>${escapeHtml(f.name)}</option>`)
+      .join('');
+    if (recipeOpts) optHtml += `<optgroup label="レシピ">${recipeOpts}</optgroup>`;
+    if (foodOpts) optHtml += `<optgroup label="餌">${foodOpts}</optgroup>`;
+    return optHtml;
+  }
 
   host.innerHTML = `
-    <div class="field"><label>コード</label><input id="f_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
-    <div class="field"><label>名前</label><input id="f_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>コード</label><input id="f_code" class="required-input" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
+    <div class="field"><label>名前</label><input id="f_name" class="required-input" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
     <div class="field"><label>生年月日</label><input id="f_birth" type="date" value="${isEdit ? escapeHtml(existing.birthDate || '') : ''}"></div>
     <div class="field"><label>性別</label>
       <select id="f_sex">
@@ -288,9 +420,19 @@ function renderCatForm(host, existing, callbacks, onSaved) {
         <option value="メス" ${isEdit && existing.sex === 'メス' ? 'selected' : ''}>メス</option>
       </select>
     </div>
+    <div class="field"><label>お気に入り餌・レシピ（最大3件）</label>
+      <select id="f_fav1">${favOptionsHtml(existingFavs[0])}</select>
+      <select id="f_fav2">${favOptionsHtml(existingFavs[1])}</select>
+      <select id="f_fav3">${favOptionsHtml(existingFavs[2])}</select>
+    </div>
     <div class="field"><label>メモ</label><textarea id="f_memo">${isEdit ? escapeHtml(existing.memo || '') : ''}</textarea></div>
-    <button id="f_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+    <div class="form-actions">
+      <button id="f_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+      <button id="f_cancel" class="btn-small">キャンセル</button>
+    </div>
   `;
+
+  if (onCancel) host.querySelector('#f_cancel').addEventListener('click', onCancel);
 
   host.querySelector('#f_save').addEventListener('click', async () => {
     const code = host.querySelector('#f_code').value.trim();
@@ -300,12 +442,20 @@ function renderCatForm(host, existing, callbacks, onSaved) {
       const existingCat = await get('catMaster', code);
       if (existingCat) { alert('既に存在するコードです'); return; }
     }
+    const favRaw = [
+      host.querySelector('#f_fav1').value,
+      host.querySelector('#f_fav2').value,
+      host.querySelector('#f_fav3').value
+    ].filter(v => v);
+    const favoriteSourceCodes = Array.from(new Set(favRaw)).slice(0, 3);
     const catData = {
       code,
       name,
       birthDate: host.querySelector('#f_birth').value,
       sex: host.querySelector('#f_sex').value,
-      memo: host.querySelector('#f_memo').value
+      favoriteSourceCodes,
+      memo: host.querySelector('#f_memo').value,
+      seq: isEdit ? existing.seq : Date.now()
     };
     await put('catMaster', catData);
     if (callbacks && callbacks.onCatsChanged) callbacks.onCatsChanged();
@@ -332,7 +482,8 @@ async function renderFoodMaster(content) {
   const typeOptionsHtml = typeCodes.map(t => `<option value="${escapeHtml(t.code)}">${escapeHtml(t.name)}</option>`).join('');
 
   content.innerHTML = `<div class="panel">
-    <div class="panel-header"><h3>餌マスタ</h3></div>
+    <div class="panel-header"><h3>餌マスタ</h3><button id="foodNewBtn" class="btn-small">${showNewFoodForm ? '－閉じる' : '＋新規作成'}</button></div>
+    ${showNewFoodForm ? '<div class="card"><div class="card-title">新規餌を追加</div><div id="foodForm"></div></div>' : ''}
     <div class="feed-filter">
       <input id="foodMasterSearch" type="text" placeholder="餌名・略称で検索">
       <select id="foodMasterFilterMaker"><option value="">メーカー(すべて)</option>${makerOptionsHtml}</select>
@@ -341,8 +492,12 @@ async function renderFoodMaster(content) {
       <select id="foodMasterFilterDisplay"><option value="">表示/非表示(すべて)</option><option value="visible">表示のみ</option><option value="hidden">非表示のみ</option></select>
     </div>
     <div id="foodListHost"></div>
-    <div class="card"><div class="card-title">新規餌を追加</div><div id="foodForm"></div></div>
   </div>`;
+
+  content.querySelector('#foodNewBtn').addEventListener('click', () => {
+    showNewFoodForm = !showNewFoodForm;
+    renderFoodMaster(content);
+  });
 
   const listHost = content.querySelector('#foodListHost');
   const searchInput = content.querySelector('#foodMasterSearch');
@@ -373,24 +528,40 @@ async function renderFoodMaster(content) {
       const typeName = typeCodes.find(tc => tc.code === f.typeCode);
       const makerName = makerCodes.find(mc => mc.code === f.makerCode);
       const visible = f.display !== false;
-      html += `<div class="card ${visible ? '' : 'hidden-item'}">
-        <div class="card-title">${escapeHtml(f.name)} <span class="muted">(${escapeHtml(f.code)})</span>${visible ? '' : '<span class="hidden-badge">非表示</span>'}</div>
-        <div class="kv">略称: ${escapeHtml(f.abbr || '-')}</div>
-        <div class="kv">メーカー: ${escapeHtml(makerName ? makerName.name : '-')}</div>
-        <div class="kv">100gあたりカロリー: ${escapeHtml(f.caloriePer100g)} kcal</div>
-        <div class="kv">形態: ${escapeHtml(formName ? formName.name : '-')}</div>
-        <div class="kv">種類: ${escapeHtml(typeName ? typeName.name : '-')}</div>
-        <div class="kv">給仕デフォルト量: ${escapeHtml(f.defaultAmountG)} g</div>
-        <div class="actions">
-          <button class="btn-small" data-toggle-display-food="${escapeHtml(f.code)}">${visible ? '非表示にする' : '表示に戻す'}</button>
-          <button class="btn-small icon-btn" data-edit-food="${escapeHtml(f.code)}" title="編集">✎</button>
-          <button class="btn-small icon-btn danger" data-del-food="${escapeHtml(f.code)}" title="削除">🗑️</button>
+      const isOpen = expandedFoodCode === f.code;
+      html += `<div class="card accordion-card ${visible ? '' : 'hidden-item'}">
+        <div class="accordion-header">
+          <button class="accordion-name-btn" data-toggle-food="${escapeHtml(f.code)}">${escapeHtml(f.name)}${visible ? '' : '<span class="hidden-badge">非表示</span>'}</button>
+          <div class="accordion-header-actions">
+            <button class="btn-tiny icon-btn eye-btn ${visible ? '' : 'eye-off'}" data-toggle-display-food="${escapeHtml(f.code)}" title="${visible ? '非表示にする' : '表示に戻す'}">${visible ? '👓' : '🕶️'}</button>
+            <span class="accordion-arrow">${isOpen ? '▼' : '▶'}</span>
+          </div>
         </div>
+        ${isOpen ? `<div class="accordion-body">
+          <div class="kv">コード: ${escapeHtml(f.code)}</div>
+          <div class="kv">略称: ${escapeHtml(f.abbr || '-')}</div>
+          <div class="kv">メーカー: ${escapeHtml(makerName ? makerName.name : '-')}</div>
+          <div class="kv">100gあたりカロリー: ${escapeHtml(f.caloriePer100g)} kcal</div>
+          <div class="kv">形態: ${escapeHtml(formName ? formName.name : '-')}</div>
+          <div class="kv">種類: ${escapeHtml(typeName ? typeName.name : '-')}</div>
+          <div class="kv">給仕デフォルト量: ${escapeHtml(f.defaultAmountG)} g</div>
+          <div class="actions">
+            <button class="btn-small icon-btn" data-edit-food="${escapeHtml(f.code)}" title="編集">✎</button>
+            <button class="btn-small icon-btn danger" data-del-food="${escapeHtml(f.code)}" title="削除">🗑️</button>
+          </div>
+        </div>` : ''}
       </div>`;
     });
     listHost.innerHTML = html || '<div class="muted">該当する餌がありません</div>';
 
-    listHost.querySelectorAll('[data-toggle-display-food]').forEach(btn => btn.addEventListener('click', async () => {
+    listHost.querySelectorAll('[data-toggle-food]').forEach(btn => btn.addEventListener('click', () => {
+      const code = btn.dataset.toggleFood;
+      expandedFoodCode = expandedFoodCode === code ? null : code;
+      renderList();
+    }));
+
+    listHost.querySelectorAll('[data-toggle-display-food]').forEach(btn => btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const code = btn.dataset.toggleDisplayFood;
       const f = foods.find(x => x.code === code);
       if (!f) return;
@@ -404,7 +575,7 @@ async function renderFoodMaster(content) {
       const f = await get('foodMaster', code);
       const formHost = el(`<div class="card"><div class="card-title">餌編集: ${escapeHtml(f.name)}</div><div></div></div>`);
       btn.closest('.card').replaceWith(formHost);
-      renderFoodForm(formHost.querySelector('div:last-child'), f, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content));
+      renderFoodForm(formHost.querySelector('div:last-child'), f, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content), () => renderFoodMaster(content));
     }));
 
     listHost.querySelectorAll('[data-del-food]').forEach(btn => btn.addEventListener('click', async () => {
@@ -427,28 +598,35 @@ async function renderFoodMaster(content) {
   filterDisplay.addEventListener('change', renderList);
   renderList();
 
-  renderFoodForm(content.querySelector('#foodForm'), null, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content));
+  if (showNewFoodForm) {
+    renderFoodForm(content.querySelector('#foodForm'), null, formCodes, typeCodes, makerCodes, () => { showNewFoodForm = false; renderFoodMaster(content); }, () => { showNewFoodForm = false; renderFoodMaster(content); });
+  }
 }
 
-function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSaved) {
+function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSaved, onCancel) {
   const isEdit = !!existing;
   const options = formCodes.map(fc => `<option value="${escapeHtml(fc.code)}" ${isEdit && existing.formCode === fc.code ? 'selected' : ''}>${escapeHtml(fc.name)}</option>`).join('');
   const typeOptions = typeCodes.map(tc => `<option value="${escapeHtml(tc.code)}" ${isEdit && existing.typeCode === tc.code ? 'selected' : ''}>${escapeHtml(tc.name)}</option>`).join('');
   const makerOptions = makerCodes.map(mc => `<option value="${escapeHtml(mc.code)}" ${isEdit && existing.makerCode === mc.code ? 'selected' : ''}>${escapeHtml(mc.name)}</option>`).join('');
   host.innerHTML = `
-    <div class="field"><label>コード</label><input id="ff_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
+    <div class="field"><label>コード</label><input id="ff_code" class="required-input" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
     <div class="field"><label>メーカー</label><select id="ff_maker"><option value="">未選択</option>${makerOptions || ''}</select>${makerCodes.length === 0 ? '<span class="muted">コードマスタの「メーカー」にコードを追加してください</span>' : ''}</div>
-    <div class="field"><label>名称</label><input id="ff_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
-    <div class="field"><label>略称（ログ表示用・任意）</label><input id="ff_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
-    <div class="field"><label>カロリー</label><input id="ff_cal" type="text" inputmode="decimal" placeholder="例: 350 または 75/85" value="${isEdit ? existing.caloriePer100g : ''}">
+    <div class="field"><label>名称</label><input id="ff_name" class="required-input" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>略称（ログ表示用）</label><input id="ff_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
+    <div class="field"><label>カロリー</label><input id="ff_cal" type="text" placeholder="例: 350 または 75/85" value="${isEdit ? existing.caloriePer100g : ''}">
       <span class="muted">100gあたりのkcal、または「小袋のkcal/内容量g」（例: 75/85）で入力可</span>
       <span id="ff_cal_preview" class="muted"></span>
     </div>
     <div class="field"><label>形態</label><select id="ff_form"><option value="">未選択</option>${options}</select></div>
     <div class="field"><label>種類</label><select id="ff_type"><option value="">未選択</option>${typeOptions}</select></div>
     <div class="field"><label>給仕デフォルト量(g)</label><input id="ff_default" type="number" step="0.1" value="${isEdit ? existing.defaultAmountG : ''}"></div>
-    <button id="ff_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+    <div class="form-actions">
+      <button id="ff_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+      <button id="ff_cancel" class="btn-small">キャンセル</button>
+    </div>
   `;
+
+  if (onCancel) host.querySelector('#ff_cancel').addEventListener('click', onCancel);
 
   const calInput = host.querySelector('#ff_cal');
   const calPreview = host.querySelector('#ff_cal_preview');
@@ -477,7 +655,8 @@ function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSave
       caloriePer100g: parseCaloriePer100gInput(calInput.value),
       formCode: host.querySelector('#ff_form').value,
       typeCode: host.querySelector('#ff_type').value,
-      defaultAmountG: Number(host.querySelector('#ff_default').value) || 0
+      defaultAmountG: Number(host.querySelector('#ff_default').value) || 0,
+      seq: isEdit ? existing.seq : Date.now()
     };
     await put('foodMaster', foodData);
     if (onSaved) onSaved();
@@ -492,6 +671,9 @@ function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSave
 async function renderRecipeMaster(content) {
   const recipes = await getAll('recipeMaster');
   const foods = await getAll('foodMaster');
+  const forms = (await getByIndex('codeMaster', 'byCategory', FOOD_FORM_CATEGORY)).filter(f => f.code !== '');
+  const types = (await getByIndex('codeMaster', 'byCategory', FOOD_TYPE_CATEGORY)).filter(t => t.code !== '');
+  const makers = (await getByIndex('codeMaster', 'byCategory', MAKER_CATEGORY)).filter(m => m.code !== '');
 
   function componentsLabel(components) {
     return (components || []).map(c => {
@@ -500,14 +682,20 @@ async function renderRecipeMaster(content) {
     }).join(' / ');
   }
 
-  let html = `<div class="panel"><div class="panel-header"><h3>レシピ</h3></div>
-    <p class="muted">複数の餌を混ぜて与える場合だけここに登録します。単一の餌はそのまま給餌管理画面から選べます。</p>
-    <div class="feed-filter">
+  let html = `<div class="panel"><div class="panel-header"><h3>レシピ</h3><button id="recipeNewBtn" class="btn-small">${showNewRecipeForm ? '－閉じる' : '＋新規作成'}</button></div>
+    <p class="muted">複数の餌を混ぜて与える場合だけここに登録します。単一の餌はそのまま給餌管理画面から選べます。</p>`;
+  if (showNewRecipeForm) html += `<div class="card"><div class="card-title">新規レシピを追加</div><div id="recipeForm"></div></div>`;
+  html += `<div class="feed-filter">
       <select id="recipeMasterFilterDisplay"><option value="">表示/非表示(すべて)</option><option value="visible">表示のみ</option><option value="hidden">非表示のみ</option></select>
     </div>
     <div id="recipeListHost"></div>`;
-  html += `<div class="card"><div class="card-title">新規レシピを追加</div><div id="recipeForm"></div></div></div>`;
+  html += `</div>`;
   content.innerHTML = html;
+
+  content.querySelector('#recipeNewBtn').addEventListener('click', () => {
+    showNewRecipeForm = !showNewRecipeForm;
+    renderRecipeMaster(content);
+  });
 
   const listHost = content.querySelector('#recipeListHost');
   const filterDisplay = content.querySelector('#recipeMasterFilterDisplay');
@@ -522,21 +710,38 @@ async function renderRecipeMaster(content) {
     let listHtml = '';
     filtered.forEach(r => {
       const visible = r.display !== false;
-      listHtml += `<div class="card ${visible ? '' : 'hidden-item'}">
-        <div class="card-title">${escapeHtml(r.name)} <span class="muted">(${escapeHtml(r.code)})</span>${visible ? '' : '<span class="hidden-badge">非表示</span>'}</div>
-        <div class="kv">略称: ${escapeHtml(r.abbr || '-')}</div>
-        <div class="kv">配合: ${escapeHtml(componentsLabel(r.components)) || '-'}</div>
-        <div class="kv">メモ: ${escapeHtml(r.memo || '-')}</div>
-        <div class="actions">
-          <button class="btn-small" data-toggle-display-recipe="${escapeHtml(r.code)}">${visible ? '非表示にする' : '表示に戻す'}</button>
-          <button class="btn-small icon-btn" data-edit-recipe="${escapeHtml(r.code)}" title="編集">✎</button>
-          <button class="btn-small icon-btn danger" data-del-recipe="${escapeHtml(r.code)}" title="削除">🗑️</button>
+      const isOpen = expandedRecipeCode === r.code;
+      listHtml += `<div class="card accordion-card ${visible ? '' : 'hidden-item'}">
+        <div class="accordion-header">
+          <button class="accordion-name-btn" data-toggle-recipe="${escapeHtml(r.code)}">${escapeHtml(r.name)}${visible ? '' : '<span class="hidden-badge">非表示</span>'}</button>
+          <div class="accordion-header-actions">
+            <button class="btn-tiny icon-btn eye-btn ${visible ? '' : 'eye-off'}" data-toggle-display-recipe="${escapeHtml(r.code)}" title="${visible ? '非表示にする' : '表示に戻す'}">${visible ? '👓' : '🕶️'}</button>
+            <span class="accordion-arrow">${isOpen ? '▼' : '▶'}</span>
+          </div>
         </div>
+        ${isOpen ? `<div class="accordion-body">
+          <div class="kv">コード: ${escapeHtml(r.code)}</div>
+          <div class="kv">略称: ${escapeHtml(r.abbr || '-')}</div>
+          <div class="kv">配合: ${escapeHtml(componentsLabel(r.components)) || '-'}</div>
+          <div class="kv">給仕デフォルト量: ${r.defaultAmountG ? escapeHtml(r.defaultAmountG) + ' g' : '-'}</div>
+          <div class="kv">メモ: ${escapeHtml(r.memo || '-')}</div>
+          <div class="actions">
+            <button class="btn-small icon-btn" data-edit-recipe="${escapeHtml(r.code)}" title="編集">✎</button>
+            <button class="btn-small icon-btn danger" data-del-recipe="${escapeHtml(r.code)}" title="削除">🗑️</button>
+          </div>
+        </div>` : ''}
       </div>`;
     });
     listHost.innerHTML = listHtml || '<div class="muted">該当するレシピがありません</div>';
 
-    listHost.querySelectorAll('[data-toggle-display-recipe]').forEach(btn => btn.addEventListener('click', async () => {
+    listHost.querySelectorAll('[data-toggle-recipe]').forEach(btn => btn.addEventListener('click', () => {
+      const code = btn.dataset.toggleRecipe;
+      expandedRecipeCode = expandedRecipeCode === code ? null : code;
+      renderList();
+    }));
+
+    listHost.querySelectorAll('[data-toggle-display-recipe]').forEach(btn => btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const code = btn.dataset.toggleDisplayRecipe;
       const r = recipes.find(x => x.code === code);
       if (!r) return;
@@ -550,7 +755,7 @@ async function renderRecipeMaster(content) {
       const r = await get('recipeMaster', code);
       const formHost = el(`<div class="card"><div class="card-title">編集: ${escapeHtml(r.name)}</div><div></div></div>`);
       btn.closest('.card').replaceWith(formHost);
-      renderRecipeForm(formHost.querySelector('div:last-child'), r, foods, () => renderRecipeMaster(content));
+      renderRecipeForm(formHost.querySelector('div:last-child'), r, foods, makers, forms, types, () => renderRecipeMaster(content), () => renderRecipeMaster(content));
     }));
 
     listHost.querySelectorAll('[data-del-recipe]').forEach(btn => btn.addEventListener('click', async () => {
@@ -567,30 +772,144 @@ async function renderRecipeMaster(content) {
   filterDisplay.addEventListener('change', renderList);
   renderList();
 
-  renderRecipeForm(content.querySelector('#recipeForm'), null, foods, () => renderRecipeMaster(content));
+  if (showNewRecipeForm) {
+    renderRecipeForm(content.querySelector('#recipeForm'), null, foods, makers, forms, types, () => { showNewRecipeForm = false; renderRecipeMaster(content); }, () => { showNewRecipeForm = false; renderRecipeMaster(content); });
+  }
 }
 
-function renderRecipeForm(host, existing, foods, onSaved) {
+// 餌選択UI: 餌マスタと同じ検索/フィルタで絞り込み→プルダウンで1件選択→比率入力→「追加」でリストへ。
+// 追加済みリストの各行は比率をその場で編集可能、削除ボタンで取り除ける。
+function renderRecipeForm(host, existing, foods, makers, forms, types, onSaved, onCancel) {
   const isEdit = !!existing;
-  const existingRatios = {};
-  if (isEdit) (existing.components || []).forEach(c => { existingRatios[c.foodCode] = c.ratio; });
+  // 構成餌の入力行（メモリ上で保持し、保存時にまとめて書き込む）。
+  // レシピは最低2種類必要なので、新規時は最初から2行用意しておく。
+  const slots = isEdit && (existing.components || []).length
+    ? (existing.components || []).map(c => ({ foodCode: c.foodCode, ratio: c.ratio }))
+    : [{ foodCode: '', ratio: '' }, { foodCode: '', ratio: '' }];
 
-  const rows = foods.map(f => {
-    const checked = existingRatios[f.code] != null;
-    return `<div class="field" style="flex-direction:row; align-items:center; gap:8px;">
-      <label class="chk" style="flex:1;"><input type="checkbox" class="recipe-food-chk" value="${escapeHtml(f.code)}" ${checked ? 'checked' : ''}> ${escapeHtml(f.name)}</label>
-      <input type="number" step="0.1" class="recipe-food-ratio" data-for="${escapeHtml(f.code)}" placeholder="比率" style="width:80px;" value="${checked ? existingRatios[f.code] : ''}">
-    </div>`;
-  }).join('');
+  // スロットごとに検索語・フィルタも保持する（入力する餌の数だけ検索欄が要るため）
+  slots.forEach(s => {
+    if (s.search === undefined) s.search = '';
+    if (s.filterMaker === undefined) s.filterMaker = '';
+    if (s.filterForm === undefined) s.filterForm = '';
+    if (s.filterType === undefined) s.filterType = '';
+  });
+
+  function buildOptionsHtml(list, selectedVal) {
+    return (list || []).map(o => `<option value="${escapeHtml(o.code)}" ${o.code === selectedVal ? 'selected' : ''}>${escapeHtml(o.name)}</option>`).join('');
+  }
 
   host.innerHTML = `
-    <div class="field"><label>コード</label><input id="rc_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
-    <div class="field"><label>名称</label><input id="rc_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
-    <div class="field"><label>略称（ログ表示用・任意）</label><input id="rc_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
-    <div class="field"><label>配合する餌と比率（例: 餌A 6 / 餌B 4）</label>${rows || '<span class="muted">先に餌マスタを登録してください</span>'}</div>
+    <div class="field"><label>コード</label><input id="rc_code" class="required-input" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
+    <div class="field"><label>名称</label><input id="rc_name" class="required-input" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>略称（ログ表示用）</label><input id="rc_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
+    <div class="field"><label>配合する餌と比率（2種類以上）</label>
+      <div id="rc_slots_host"></div>
+      <button id="rc_add_slot" type="button" class="btn-small">＋行を追加</button>
+    </div>
+    <div class="field"><label>給仕デフォルト量(g)</label><input id="rc_default" type="number" step="0.1" value="${isEdit && existing.defaultAmountG ? existing.defaultAmountG : ''}"></div>
     <div class="field"><label>メモ</label><input id="rc_memo" value="${isEdit ? escapeHtml(existing.memo || '') : ''}"></div>
-    <button id="rc_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+    <div class="form-actions">
+      <button id="rc_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+      <button id="rc_cancel" class="btn-small">キャンセル</button>
+    </div>
   `;
+
+  if (onCancel) host.querySelector('#rc_cancel').addEventListener('click', onCancel);
+
+  const slotsHost = host.querySelector('#rc_slots_host');
+
+  // 検索/フィルタで絞り込んだ候補（他の行で選択済みの餌は除外。自分自身の選択は含める）
+  function getCandidates(idx) {
+    const s = slots[idx];
+    const q = (s.search || '').trim().toLowerCase();
+    const chosenElsewhere = new Set(slots.filter((s2, i) => i !== idx && s2.foodCode).map(s2 => s2.foodCode));
+    return foods.filter(f => {
+      if (chosenElsewhere.has(f.code)) return false;
+      if (s.filterMaker && f.makerCode !== s.filterMaker) return false;
+      if (s.filterForm && f.formCode !== s.filterForm) return false;
+      if (s.filterType && f.typeCode !== s.filterType) return false;
+      if (q && !(f.name || '').toLowerCase().includes(q) && !(f.abbr || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+
+  function renderSlots() {
+    // 検索ボックスはスロット内に移動したため、入力中に全体を再描画するとフォーカスが外れてしまう。
+    // 再描画前にフォーカス位置とカーソル位置を記録し、再描画後に復元する。
+    const active = document.activeElement;
+    let restoreIdx = null;
+    let restoreCursor = null;
+    if (active && slotsHost.contains(active) && active.classList.contains('rc_slot_search')) {
+      restoreIdx = active.dataset.idx;
+      restoreCursor = active.selectionStart;
+    }
+    const rowsHtml = slots.map((s, idx) => {
+      const candidates = getCandidates(idx);
+      const optionsHtml = candidates.map(f => `<option value="${escapeHtml(f.code)}" ${f.code === s.foodCode ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
+      return `<div class="rc_slot_block">
+        ${idx > 0 ? '<hr class="rc_slot_divider">' : ''}
+        <div class="feed-filter">
+          <input type="text" class="rc_slot_search" data-idx="${idx}" placeholder="餌名・略称で検索" value="${escapeHtml(s.search)}">
+          <select class="rc_slot_filter_maker" data-idx="${idx}"><option value="">メーカー(すべて)</option>${buildOptionsHtml(makers, s.filterMaker)}</select>
+          <select class="rc_slot_filter_form" data-idx="${idx}"><option value="">形態(すべて)</option>${buildOptionsHtml(forms, s.filterForm)}</select>
+          <select class="rc_slot_filter_type" data-idx="${idx}"><option value="">種類(すべて)</option>${buildOptionsHtml(types, s.filterType)}</select>
+        </div>
+        <div class="field" style="flex-direction:row; align-items:center; gap:8px;">
+          <select class="rc_slot_select" data-idx="${idx}" style="flex:1;">
+            <option value="">（未選択）</option>
+            ${optionsHtml}
+          </select>
+          <input type="number" step="0.1" class="rc_slot_ratio" data-idx="${idx}" placeholder="比率" style="width:80px;" value="${escapeHtml(s.ratio)}">
+          ${slots.length > 2 ? `<button type="button" class="btn-tiny icon-btn danger rc_slot_del" data-idx="${idx}" title="削除">🗑️</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    slotsHost.innerHTML = rowsHtml;
+
+    slotsHost.querySelectorAll('.rc_slot_search').forEach(inp => inp.addEventListener('input', () => {
+      slots[Number(inp.dataset.idx)].search = inp.value;
+      renderSlots();
+    }));
+    slotsHost.querySelectorAll('.rc_slot_filter_maker').forEach(sel => sel.addEventListener('change', () => {
+      slots[Number(sel.dataset.idx)].filterMaker = sel.value;
+      renderSlots();
+    }));
+    slotsHost.querySelectorAll('.rc_slot_filter_form').forEach(sel => sel.addEventListener('change', () => {
+      slots[Number(sel.dataset.idx)].filterForm = sel.value;
+      renderSlots();
+    }));
+    slotsHost.querySelectorAll('.rc_slot_filter_type').forEach(sel => sel.addEventListener('change', () => {
+      slots[Number(sel.dataset.idx)].filterType = sel.value;
+      renderSlots();
+    }));
+    slotsHost.querySelectorAll('.rc_slot_select').forEach(sel => sel.addEventListener('change', () => {
+      slots[Number(sel.dataset.idx)].foodCode = sel.value;
+      renderSlots();
+    }));
+    slotsHost.querySelectorAll('.rc_slot_ratio').forEach(inp => inp.addEventListener('change', () => {
+      slots[Number(inp.dataset.idx)].ratio = inp.value;
+    }));
+
+    if (restoreIdx !== null) {
+      const toFocus = slotsHost.querySelector(`.rc_slot_search[data-idx="${restoreIdx}"]`);
+      if (toFocus) {
+        toFocus.focus();
+        if (restoreCursor != null) toFocus.setSelectionRange(restoreCursor, restoreCursor);
+      }
+    }
+    slotsHost.querySelectorAll('.rc_slot_del').forEach(btn => btn.addEventListener('click', () => {
+      slots.splice(Number(btn.dataset.idx), 1);
+      renderSlots();
+    }));
+  }
+
+  host.querySelector('#rc_add_slot').addEventListener('click', () => {
+    slots.push({ foodCode: '', ratio: '', search: '', filterMaker: '', filterForm: '', filterType: '' });
+    renderSlots();
+  });
+
+  renderSlots();
 
   host.querySelector('#rc_save').addEventListener('click', async () => {
     const code = host.querySelector('#rc_code').value.trim();
@@ -600,15 +919,11 @@ function renderRecipeForm(host, existing, foods, onSaved) {
       const existingR = await get('recipeMaster', code);
       if (existingR) { alert('既に存在するコードです'); return; }
     }
-    const components = [];
-    host.querySelectorAll('.recipe-food-chk').forEach(chk => {
-      if (!chk.checked) return;
-      const ratioInput = chk.closest('.field').querySelector('.recipe-food-ratio');
-      const ratio = Number(ratioInput.value) || 1;
-      components.push({ foodCode: chk.value, ratio });
-    });
+    const components = slots
+      .filter(s => s.foodCode)
+      .map(s => ({ foodCode: s.foodCode, ratio: Number(s.ratio) || 1 }));
     if (components.length < 2) { alert('レシピは2種類以上の餌を選んでください（単一の餌は登録不要です）'); return; }
-    const data = { code, name, abbr: host.querySelector('#rc_abbr').value.trim(), components, memo: host.querySelector('#rc_memo').value };
+    const data = { code, name, abbr: host.querySelector('#rc_abbr').value.trim(), components, defaultAmountG: Number(host.querySelector('#rc_default').value) || 0, memo: host.querySelector('#rc_memo').value, seq: isEdit ? existing.seq : Date.now() };
     await put('recipeMaster', data);
     if (onSaved) onSaved();
     else {
@@ -623,13 +938,20 @@ async function renderMedicineMaster(content) {
   const units = (await getByIndex('codeMaster', 'byCategory', MED_UNIT_CATEGORY)).filter(u => u.code !== '');
   const effects = (await getByIndex('codeMaster', 'byCategory', MED_EFFECT_CATEGORY)).filter(e => e.code !== '');
 
-  let html = `<div class="panel"><div class="panel-header"><h3>薬・サプリマスタ</h3></div>
+  let html = `<div class="panel">
+    <div class="panel-header"><h3>薬・サプリマスタ</h3><button id="medicineNewBtn" class="btn-small">${showNewMedicineForm ? '－閉じる' : '＋新規作成'}</button></div>
+    ${showNewMedicineForm ? '<div class="card"><div class="card-title">新規登録</div><div id="medicineForm"></div></div>' : ''}
     <div class="feed-filter">
       <select id="medicineMasterFilterDisplay"><option value="">表示/非表示(すべて)</option><option value="visible">表示のみ</option><option value="hidden">非表示のみ</option></select>
     </div>
-    <div id="medicineListHost"></div>`;
-  html += `<div class="card"><div class="card-title">新規登録</div><div id="medicineForm"></div></div></div>`;
+    <div id="medicineListHost"></div>
+  </div>`;
   content.innerHTML = html;
+
+  content.querySelector('#medicineNewBtn').addEventListener('click', () => {
+    showNewMedicineForm = !showNewMedicineForm;
+    renderMedicineMaster(content);
+  });
 
   const listHost = content.querySelector('#medicineListHost');
   const filterDisplay = content.querySelector('#medicineMasterFilterDisplay');
@@ -647,22 +969,38 @@ async function renderMedicineMaster(content) {
       const effectName = effects.find(e => e.code === m.effectCode);
       const kindLabel = m.kindFlag === 'SUPPLEMENT' ? 'サプリ' : '薬';
       const visible = m.display !== false;
-      listHtml += `<div class="card ${visible ? '' : 'hidden-item'}">
-        <div class="card-title">${escapeHtml(m.name)} <span class="muted">(${escapeHtml(m.code)}・${escapeHtml(kindLabel)})</span>${visible ? '' : '<span class="hidden-badge">非表示</span>'}</div>
-        <div class="kv">略称: ${escapeHtml(m.abbr || '-')}</div>
-        <div class="kv">デフォルト用量: ${m.defaultDose != null && m.defaultDose !== '' ? escapeHtml(m.defaultDose) + escapeHtml(unitName ? unitName.name : '') : '-'}</div>
-        <div class="kv">効能: ${escapeHtml(effectName ? effectName.name : '-')}</div>
-        <div class="kv">メモ: ${escapeHtml(m.memo || '-')}</div>
-        <div class="actions">
-          <button class="btn-small" data-toggle-display-medicine="${escapeHtml(m.code)}">${visible ? '非表示にする' : '表示に戻す'}</button>
-          <button class="btn-small icon-btn" data-edit-medicine="${escapeHtml(m.code)}" title="編集">✎</button>
-          <button class="btn-small icon-btn danger" data-del-medicine="${escapeHtml(m.code)}" title="削除">🗑️</button>
+      const isOpen = expandedMedicineCode === m.code;
+      listHtml += `<div class="card accordion-card ${visible ? '' : 'hidden-item'}">
+        <div class="accordion-header">
+          <button class="accordion-name-btn" data-toggle-medicine="${escapeHtml(m.code)}">${escapeHtml(m.name)}${visible ? '' : '<span class="hidden-badge">非表示</span>'}</button>
+          <div class="accordion-header-actions">
+            <button class="btn-tiny icon-btn eye-btn ${visible ? '' : 'eye-off'}" data-toggle-display-medicine="${escapeHtml(m.code)}" title="${visible ? '非表示にする' : '表示に戻す'}">${visible ? '👓' : '🕶️'}</button>
+            <span class="accordion-arrow">${isOpen ? '▼' : '▶'}</span>
+          </div>
         </div>
+        ${isOpen ? `<div class="accordion-body">
+          <div class="kv">コード: ${escapeHtml(m.code)}（${escapeHtml(kindLabel)}）</div>
+          <div class="kv">略称: ${escapeHtml(m.abbr || '-')}</div>
+          <div class="kv">デフォルト用量: ${m.defaultDose != null && m.defaultDose !== '' ? escapeHtml(m.defaultDose) + escapeHtml(unitName ? unitName.name : '') : '-'}</div>
+          <div class="kv">効能: ${escapeHtml(effectName ? effectName.name : '-')}</div>
+          <div class="kv">メモ: ${escapeHtml(m.memo || '-')}</div>
+          <div class="actions">
+            <button class="btn-small icon-btn" data-edit-medicine="${escapeHtml(m.code)}" title="編集">✎</button>
+            <button class="btn-small icon-btn danger" data-del-medicine="${escapeHtml(m.code)}" title="削除">🗑️</button>
+          </div>
+        </div>` : ''}
       </div>`;
     });
     listHost.innerHTML = listHtml || '<div class="muted">該当するサプリ・薬がありません</div>';
 
-    listHost.querySelectorAll('[data-toggle-display-medicine]').forEach(btn => btn.addEventListener('click', async () => {
+    listHost.querySelectorAll('[data-toggle-medicine]').forEach(btn => btn.addEventListener('click', () => {
+      const code = btn.dataset.toggleMedicine;
+      expandedMedicineCode = expandedMedicineCode === code ? null : code;
+      renderList();
+    }));
+
+    listHost.querySelectorAll('[data-toggle-display-medicine]').forEach(btn => btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const code = btn.dataset.toggleDisplayMedicine;
       const m = medicines.find(x => x.code === code);
       if (!m) return;
@@ -676,7 +1014,7 @@ async function renderMedicineMaster(content) {
       const m = await get('medicineMaster', code);
       const formHost = el(`<div class="card"><div class="card-title">編集: ${escapeHtml(m.name)}</div><div></div></div>`);
       btn.closest('.card').replaceWith(formHost);
-      renderMedicineForm(formHost.querySelector('div:last-child'), m, units, effects, () => renderMedicineMaster(content));
+      renderMedicineForm(formHost.querySelector('div:last-child'), m, units, effects, () => renderMedicineMaster(content), () => renderMedicineMaster(content));
     }));
 
     listHost.querySelectorAll('[data-del-medicine]').forEach(btn => btn.addEventListener('click', async () => {
@@ -693,17 +1031,19 @@ async function renderMedicineMaster(content) {
   filterDisplay.addEventListener('change', renderList);
   renderList();
 
-  renderMedicineForm(content.querySelector('#medicineForm'), null, units, effects, () => renderMedicineMaster(content));
+  if (showNewMedicineForm) {
+    renderMedicineForm(content.querySelector('#medicineForm'), null, units, effects, () => { showNewMedicineForm = false; renderMedicineMaster(content); }, () => { showNewMedicineForm = false; renderMedicineMaster(content); });
+  }
 }
 
-function renderMedicineForm(host, existing, units, effects, onSaved) {
+function renderMedicineForm(host, existing, units, effects, onSaved, onCancel) {
   const isEdit = !!existing;
   const unitOptions = units.map(u => `<option value="${escapeHtml(u.code)}" ${isEdit && existing.unitCode === u.code ? 'selected' : ''}>${escapeHtml(u.name)}</option>`).join('');
   const effectOptions = effects.map(e => `<option value="${escapeHtml(e.code)}" ${isEdit && existing.effectCode === e.code ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('');
   host.innerHTML = `
-    <div class="field"><label>コード</label><input id="mm_code" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
-    <div class="field"><label>名称</label><input id="mm_name" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
-    <div class="field"><label>略称（ログ表示用・任意）</label><input id="mm_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
+    <div class="field"><label>コード</label><input id="mm_code" class="required-input" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
+    <div class="field"><label>名称</label><input id="mm_name" class="required-input" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
+    <div class="field"><label>略称（ログ表示用）</label><input id="mm_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
     <div class="field"><label>区分</label>
       <select id="mm_kind">
         <option value="DRUG" ${!isEdit || existing.kindFlag !== 'SUPPLEMENT' ? 'selected' : ''}>薬</option>
@@ -714,8 +1054,12 @@ function renderMedicineForm(host, existing, units, effects, onSaved) {
     <div class="field"><label>単位</label><select id="mm_unit"><option value="">未選択</option>${unitOptions}</select></div>
     <div class="field"><label>効能</label><select id="mm_effect"><option value="">未選択</option>${effectOptions}</select></div>
     <div class="field"><label>メモ</label><input id="mm_memo" value="${isEdit ? escapeHtml(existing.memo || '') : ''}"></div>
-    <button id="mm_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+    <div class="form-actions">
+      <button id="mm_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
+      <button id="mm_cancel" class="btn-small">キャンセル</button>
+    </div>
   `;
+  if (onCancel) host.querySelector('#mm_cancel').addEventListener('click', onCancel);
   host.querySelector('#mm_save').addEventListener('click', async () => {
     const code = host.querySelector('#mm_code').value.trim();
     const name = host.querySelector('#mm_name').value.trim();
@@ -733,7 +1077,8 @@ function renderMedicineForm(host, existing, units, effects, onSaved) {
       defaultDose: doseVal === '' ? null : Number(doseVal),
       unitCode: host.querySelector('#mm_unit').value,
       effectCode: host.querySelector('#mm_effect').value,
-      memo: host.querySelector('#mm_memo').value
+      memo: host.querySelector('#mm_memo').value,
+      seq: isEdit ? existing.seq : Date.now()
     };
     await put('medicineMaster', data);
     if (onSaved) onSaved();

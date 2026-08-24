@@ -146,6 +146,30 @@ header.app-header {
   flex-shrink: 0;
   margin-left: 8px;
 }
+.accordion-name-btn {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: bold;
+  font-size: 14px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accordion-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
 .accordion-body {
   padding: 0 12px 12px;
   border-top: 1px solid #f0f0f0;
@@ -326,6 +350,10 @@ button {
   padding: 4px 9px;
 }
 
+.eye-btn {
+  position: relative;
+}
+
 .hidden-item { opacity: 0.5; }
 .hidden-badge {
   font-size: 11px;
@@ -354,6 +382,52 @@ tr.serve-row {
   border: 1px solid #ddd;
   border-radius: 6px;
   font-size: 13px;
+}
+
+.field-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.datetime-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.date-input {
+  flex: 1 1 140px;
+  min-width: 130px;
+}
+
+.rc_slot_block { margin-top: 6px; }
+.rc_slot_divider {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 12px 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.form-actions .btn-primary {
+  width: auto;
+  flex: 1;
+  margin-top: 0;
+}
+.form-actions .btn-small {
+  flex: 1;
+}
+
+/* 必須項目: ラベルに「（任意）」等を書く代わりに、input/select自体の背景を赤系にして必須であることを示す。
+   任意項目はこのクラスを付けない（無色のまま）。 */
+.required-input {
+  background: #fdecec !important;
+  border-color: #f3b6b6 !important;
 }
 
 .invalid-day-toggle {
