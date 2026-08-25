@@ -35,6 +35,49 @@ export async function seedDefaults() {
   await reorderSeededSeq('recipeMaster', initialRecipeMaster);
   await reorderSeededSeq('medicineMaster', initialMedicineMaster);
   await reorderSeededSeq('catMaster', initialCatMaster);
+  await syncDailyKcalCache();
+}
+
+// 指定した猫・日付の摂取(INTAKE)カロリー合計をdailyLogにキャッシュする。
+// 日々タブのカレンダーが月表示のたびに給餈ログを集計し直さなくて済むよう、
+// 給餈の入力・編集・削除のタイミングで都度呼び出して最新化する。
+export async function recomputeDailyKcal(catCode, date) {
+  const feedRows = await getByIndex('feedingLog', 'byCatDate', [catCode, date]);
+  const kcal = Math.round(feedRows.reduce((s, e) => s + (e.kind === 'INTAKE' ? (e.calorie || 0) : 0), 0) * 10) / 10;
+  const rows = await getByIndex('dailyLog', 'byCatDate', [catCode, date]);
+  const existing = rows[0] || null;
+  const data = existing ? { ...existing, kcal } : { catCode, date, kcal };
+  await put('dailyLog', data);
+}
+
+// 起動時に給餈ログ全体から日別カロリー合計を再集計し、dailyLog.kcalキャッシュを最新状態にする。
+// 給餈ログ全件を1回のクエリでまとめて取得して集計するだけなので、月ごとに再集計するより十分軽い。
+export async function syncDailyKcalCache() {
+  const feedRows = await getAll('feedingLog');
+  const totalsByKey = new Map(); // "catCode|date" -> kcal合計
+  for (const e of feedRows) {
+    if (e.kind !== 'INTAKE') continue;
+    const key = `${e.catCode}|${e.date}`;
+    totalsByKey.set(key, Math.round(((totalsByKey.get(key) || 0) + (e.calorie || 0)) * 10) / 10);
+  }
+  const dailyRows = await getAll('dailyLog');
+  const dailyByKey = new Map(dailyRows.map(r => [`${r.catCode}|${r.date}`, r]));
+  const seenKeys = new Set();
+  for (const [key, kcal] of totalsByKey) {
+    seenKeys.add(key);
+    const existing = dailyByKey.get(key);
+    if (existing) {
+      if (existing.kcal !== kcal) await put('dailyLog', { ...existing, kcal });
+    } else {
+      const [catCode, date] = key.split('|');
+      await put('dailyLog', { catCode, date, kcal });
+    }
+  }
+  // 給餈記録が無くなった日はキャッシュを0に戻す
+  for (const row of dailyRows) {
+    const key = `${row.catCode}|${row.date}`;
+    if (!seenKeys.has(key) && row.kcal) await put('dailyLog', { ...row, kcal: 0 });
+  }
 }
 
 // 新規追加時のseqはDate.now()（十分大きい値）を使うため、それより十分小さいこの値未満のseqは
@@ -205,7 +248,7 @@ async function renderCodeMaster(content) {
           <td>${escapeHtml(item.name)}</td>
           <td>${escapeHtml(item.abbr || '-')}</td>
           <td class="actions">
-            <button class="btn-tiny icon-btn" data-edit-code="${item.id}" title="編集">✎</button>
+            <button class="btn-tiny icon-btn" data-edit-code="${item.id}" title="編集">✏️</button>
             <button class="btn-tiny icon-btn danger" data-del-code="${item.id}" title="削除">🗑️</button>
           </td>
         </tr>`;
@@ -347,7 +390,7 @@ async function renderCatMaster(content, callbacks) {
       <div class="kv">お気に入り餌・レシピ: ${favs.length ? escapeHtml(favs.map(sourceName).join('、')) : '-'}</div>
       <div class="kv">メモ: ${escapeHtml(cat.memo || '-')}</div>
       <div class="actions">
-        <button class="btn-small icon-btn" data-edit-cat="${escapeHtml(cat.code)}" title="編集">✎</button>
+        <button class="btn-small icon-btn" data-edit-cat="${escapeHtml(cat.code)}" title="編集">✏️</button>
         <button class="btn-small icon-btn danger" data-del-cat="${escapeHtml(cat.code)}" title="削除">🗑️</button>
       </div>
     </div>`;
@@ -546,7 +589,7 @@ async function renderFoodMaster(content) {
           <div class="kv">種類: ${escapeHtml(typeName ? typeName.name : '-')}</div>
           <div class="kv">給仕デフォルト量: ${escapeHtml(f.defaultAmountG)} g</div>
           <div class="actions">
-            <button class="btn-small icon-btn" data-edit-food="${escapeHtml(f.code)}" title="編集">✎</button>
+            <button class="btn-small icon-btn" data-edit-food="${escapeHtml(f.code)}" title="編集">✏️</button>
             <button class="btn-small icon-btn danger" data-del-food="${escapeHtml(f.code)}" title="削除">🗑️</button>
           </div>
         </div>` : ''}
@@ -726,7 +769,7 @@ async function renderRecipeMaster(content) {
           <div class="kv">給仕デフォルト量: ${r.defaultAmountG ? escapeHtml(r.defaultAmountG) + ' g' : '-'}</div>
           <div class="kv">メモ: ${escapeHtml(r.memo || '-')}</div>
           <div class="actions">
-            <button class="btn-small icon-btn" data-edit-recipe="${escapeHtml(r.code)}" title="編集">✎</button>
+            <button class="btn-small icon-btn" data-edit-recipe="${escapeHtml(r.code)}" title="編集">✏️</button>
             <button class="btn-small icon-btn danger" data-del-recipe="${escapeHtml(r.code)}" title="削除">🗑️</button>
           </div>
         </div>` : ''}
@@ -861,8 +904,8 @@ function renderRecipeForm(host, existing, foods, makers, forms, types, onSaved, 
             ${optionsHtml}
           </select>
           <input type="number" step="0.1" class="rc_slot_ratio" data-idx="${idx}" placeholder="比率" style="width:80px;" value="${escapeHtml(s.ratio)}">
-          ${slots.length > 2 ? `<button type="button" class="btn-tiny icon-btn danger rc_slot_del" data-idx="${idx}" title="削除">🗑️</button>` : ''}
         </div>
+        ${slots.length > 2 ? `<div class="rc_slot_del_row"><button type="button" class="btn-tiny icon-btn danger rc_slot_del" data-idx="${idx}" title="削除">🗑️ この行を削除</button></div>` : ''}
       </div>`;
     }).join('');
     slotsHost.innerHTML = rowsHtml;
@@ -985,7 +1028,7 @@ async function renderMedicineMaster(content) {
           <div class="kv">効能: ${escapeHtml(effectName ? effectName.name : '-')}</div>
           <div class="kv">メモ: ${escapeHtml(m.memo || '-')}</div>
           <div class="actions">
-            <button class="btn-small icon-btn" data-edit-medicine="${escapeHtml(m.code)}" title="編集">✎</button>
+            <button class="btn-small icon-btn" data-edit-medicine="${escapeHtml(m.code)}" title="編集">✏️</button>
             <button class="btn-small icon-btn danger" data-del-medicine="${escapeHtml(m.code)}" title="削除">🗑️</button>
           </div>
         </div>` : ''}

@@ -5,10 +5,16 @@ export async function exportAll() {
   await exportSelected(STORES);
 }
 
+// エクスポートファイル名の日時サフィックス（ローカル時刻、YmdHis形式。例: 20260824153045）
+function formatTimestampYmdHis(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
 // storeNames: エクスポートしたいストア名の配列（チェックボックスで選択されたもの）
 // ZIP内にストアごとのJSONファイル(例: feedingLog.json)＋meta.jsonをまとめる
 export async function exportSelected(storeNames) {
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = formatTimestampYmdHis(new Date());
   const entries = [];
   for (const store of storeNames) {
     const rows = await getAll(store);

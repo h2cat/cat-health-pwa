@@ -192,7 +192,10 @@ header.app-header {
   padding: 8px;
   border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 15px;
+  /* iOSはinput/selectのfont-sizeが16px未満だとフォーカス時に自動ズームし、
+     その後の画面サイズがそのまま拡大表示になったり位置がずれたりする。
+     ピンチズーム自体は無効化しない（老眼で必要）ため、16px以上にして自動ズームだけ防ぐ。 */
+  font-size: 16px;
 }
 .chk-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .chk { font-size: 13px; display: flex; align-items: center; gap: 4px; }
@@ -260,7 +263,7 @@ button {
   padding: 6px;
   border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .cat-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; flex-wrap: wrap; }
@@ -305,6 +308,25 @@ button {
   margin-top: 1px;
 }
 .cal-cell.selected.invalid-day .invalid-dot { color: #fff; }
+
+.cal-mark-icon {
+  display: block;
+  font-size: 10px;
+  line-height: 1;
+  margin-top: 2px;
+}
+.cal-daily-marks {
+  font-size: 9px;
+  line-height: 1;
+  margin-top: 2px;
+  letter-spacing: -1px;
+}
+.cal-kcal {
+  font-size: 9px;
+  line-height: 1.2;
+  margin-top: 1px;
+  opacity: 0.85;
+}
 
 .memo-flag {
   cursor: help;
@@ -381,7 +403,7 @@ tr.serve-row {
   padding: 4px;
   border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .field-title-row {
@@ -407,6 +429,11 @@ tr.serve-row {
   border: none;
   border-top: 1px solid #eee;
   margin: 12px 0;
+}
+.rc_slot_del_row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
 }
 
 .form-actions {
