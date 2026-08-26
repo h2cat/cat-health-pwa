@@ -84,9 +84,9 @@ export const initialCodeMaster = [
 
   // メモカテゴリ（メモ入力でチェックを付けられるタグ。略称に絵文字を入れると一覧・カレンダーの絞り込みに使われる。下に直接追記していってOK）
   { category: 'MEMO_CATEGORY', code: '', name: 'メモカテゴリ' },
-  { category: 'MEMO_CATEGORY', code: 'MEMO', name: 'メモ', abbr: '📝' }
-  { category: 'MEMO_CATEGORY', code: 'COUGH', name: 'せき', abbr: '😷' }
-  { category: 'MEMO_CATEGORY', code: 'DANGER', name: '異常事態', abbr: '⚠' }
+  { category: 'MEMO_CATEGORY', code: 'MEMO', name: 'メモ', abbr: '📝' },
+  { category: 'MEMO_CATEGORY', code: 'COUGH', name: 'せき', abbr: '😷' },
+  { category: 'MEMO_CATEGORY', code: 'DANGER', name: '異常事態', abbr: '⚠' },
 ];
 
 // ----- 猫マスタ -----
