@@ -727,10 +727,6 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
 }
 
 // ===== メモ（時間単位のメモ＋カテゴリタグ） =====
-function memoCategoryMark(c) {
-  return (c && (c.abbr || c.name)) || '';
-}
-
 async function renderMemoSection(host, cat, state, refreshCalendar, rerenderAll) {
   const categories = (await getByIndex('codeMaster', 'byCategory', MEMO_CATEGORY)).filter(c => c.code !== '');
   const entries = (await getByIndex('memoLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -872,11 +868,12 @@ async function buildDailyLogRowsHtml(cat, state) {
   });
 
   memoRows.forEach(e => {
-    const catMarks = (e.categories || []).map(code => {
+    const catText = (e.categories || []).map(code => {
       const c = memoCategories.find(x => x.code === code);
-      return c ? memoCategoryMark(c) : code;
-    }).join('');
-    rows.push({ time: e.time, html: `<div class="daily-log-row">📝${catMarks ? escapeHtml(catMarks) + ' ' : ''}${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(e.memo || '')}</div>` });
+      if (!c) return code;
+      return c.abbr ? `${c.abbr} ${c.name}` : c.name;
+    }).join(' ');
+    rows.push({ time: e.time, html: `<div class="daily-log-row">📝${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))}${catText ? ' ' + escapeHtml(catText) : ''} ${escapeHtml(e.memo || '')}</div>` });
   });
 
   rows.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
