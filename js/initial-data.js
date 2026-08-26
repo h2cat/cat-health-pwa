@@ -80,7 +80,11 @@ export const initialCodeMaster = [
 
   // 日々のイベント（日々管理でチェックを付けられる項目。下に直接追記していってOK）
   { category: 'DAILY_EVENT', code: '', name: '日々のイベント' },
-  { category: 'DAILY_EVENT', code: 'HOSPITAL', name: '通院' }
+  { category: 'DAILY_EVENT', code: 'HOSPITAL', name: '通院' },
+
+  // メモカテゴリ（メモ入力でチェックを付けられるタグ。略称に絵文字を入れると一覧・カレンダーの絞り込みに使われる。下に直接追記していってOK）
+  { category: 'MEMO_CATEGORY', code: '', name: 'メモカテゴリ' },
+  { category: 'MEMO_CATEGORY', code: 'COUGH', name: 'せき', abbr: '😷' }
 ];
 
 // ----- 猫マスタ -----

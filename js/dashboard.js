@@ -10,6 +10,7 @@ export const VOMIT_STATE_CATEGORY = 'VOMIT_STATE';
 export const MED_UNIT_CATEGORY = 'MED_UNIT';
 export const MED_EFFECT_CATEGORY = 'MED_EFFECT';
 export const DAILY_EVENT_CATEGORY = 'DAILY_EVENT';
+export const MEMO_CATEGORY = 'MEMO_CATEGORY';
 
 let expandedCodeCategory = null; // コードマスタのアコーディオンで開いている大分類
 let addingCodeCategory = null; // コードマスタで「＋コード追加」の入力行を表示中の大分類
@@ -24,18 +25,26 @@ let expandedMedicineCode = null; // 薬・サプリマスタのアコーディ�
 // 初回起動時／アップデート時のマスタ種seed
 // js/initial-data.js の内容のうち、「まだ登録されていないもの」だけを追加する。
 // 既にアプリ内で編集・削除したデータは上書きしない。
+// マスタのinitial-data.jsとのマージ、旧データの補正、カロリーキャッシュの再集計などをまとめて行う。
+// 「データコンバート」ボタン（IO画面）から手動で呼び出す想定（起動時の自動実行はしない）。
+// 何回実行しても安全（差分がなければ何も変更しない）。変更件数をまとめて返す。
 export async function seedDefaults() {
-  await ensureCodeMaster(initialCodeMaster);
-  await ensureCatMaster(initialCatMaster);
-  await ensureFoodMaster(initialFoodMaster);
-  await ensureMedicineMaster(initialMedicineMaster);
-  await ensureRecipeMaster(initialRecipeMaster);
-  await migrateMedicineKindFlag();
-  await reorderSeededSeq('foodMaster', initialFoodMaster);
-  await reorderSeededSeq('recipeMaster', initialRecipeMaster);
-  await reorderSeededSeq('medicineMaster', initialMedicineMaster);
-  await reorderSeededSeq('catMaster', initialCatMaster);
-  await syncDailyKcalCache();
+  const result = {
+    codeAdded: await ensureCodeMaster(initialCodeMaster),
+    catAdded: await ensureCatMaster(initialCatMaster),
+    foodAdded: await ensureFoodMaster(initialFoodMaster),
+    medicineAdded: await ensureMedicineMaster(initialMedicineMaster),
+    recipeAdded: await ensureRecipeMaster(initialRecipeMaster),
+    kindFlagFixed: await migrateMedicineKindFlag(),
+    seqFixed: 0,
+    kcalUpdated: 0
+  };
+  result.seqFixed += await reorderSeededSeq('foodMaster', initialFoodMaster);
+  result.seqFixed += await reorderSeededSeq('recipeMaster', initialRecipeMaster);
+  result.seqFixed += await reorderSeededSeq('medicineMaster', initialMedicineMaster);
+  result.seqFixed += await reorderSeededSeq('catMaster', initialCatMaster);
+  result.kcalUpdated = await syncDailyKcalCache();
+  return result;
 }
 
 // 指定した猫・日付の摂取(INTAKE)カロリー合計をdailyLogにキャッシュする。
@@ -53,6 +62,7 @@ export async function recomputeDailyKcal(catCode, date) {
 // 起動時に給餈ログ全体から日別カロリー合計を再集計し、dailyLog.kcalキャッシュを最新状態にする。
 // 給餈ログ全件を1回のクエリでまとめて取得して集計するだけなので、月ごとに再集計するより十分軽い。
 export async function syncDailyKcalCache() {
+  let updated = 0;
   const feedRows = await getAll('feedingLog');
   const totalsByKey = new Map(); // "catCode|date" -> kcal合計
   for (const e of feedRows) {
@@ -67,17 +77,19 @@ export async function syncDailyKcalCache() {
     seenKeys.add(key);
     const existing = dailyByKey.get(key);
     if (existing) {
-      if (existing.kcal !== kcal) await put('dailyLog', { ...existing, kcal });
+      if (existing.kcal !== kcal) { await put('dailyLog', { ...existing, kcal }); updated++; }
     } else {
       const [catCode, date] = key.split('|');
       await put('dailyLog', { catCode, date, kcal });
+      updated++;
     }
   }
   // 給餈記録が無くなった日はキャッシュを0に戻す
   for (const row of dailyRows) {
     const key = `${row.catCode}|${row.date}`;
-    if (!seenKeys.has(key) && row.kcal) await put('dailyLog', { ...row, kcal: 0 });
+    if (!seenKeys.has(key) && row.kcal) { await put('dailyLog', { ...row, kcal: 0 }); updated++; }
   }
+  return updated;
 }
 
 // 新規追加時のseqはDate.now()（十分大きい値）を使うため、それより十分小さいこの値未満のseqは
@@ -88,75 +100,96 @@ const LEGACY_SEQ_THRESHOLD = 1_000_000;
 // 対象はseq未設定、または旧移行処理（コード順で割り振られたもの）のレコードのみ。
 // Date.now()ベースのseq(この機能追加後に新規追加されたもの)は十分大きい値なので対象にならない。
 async function reorderSeededSeq(storeName, entries) {
+  let fixed = 0;
   const seededCodes = new Set(entries.map(e => e.code));
   let n = 1;
-  // 1) initial-data.js記載順に振り直す
+  // 1) initial-data.js記載順に振り直す（既に同じ値なら書き込まない＝再実行しても差分0件になる）
   for (const e of entries) {
     const row = await get(storeName, e.code);
     if (row && (row.seq == null || row.seq < LEGACY_SEQ_THRESHOLD)) {
-      row.seq = n;
-      await put(storeName, row);
+      if (row.seq !== n) {
+        row.seq = n;
+        await put(storeName, row);
+        fixed++;
+      }
     }
     n++;
   }
   // 2) 初期データに無い自作の追加分（旧移行処理のseqが残っているもの）は、初期データの後ろに回す
   const rows = await getAll(storeName);
-  for (const row of rows) {
-    if (!seededCodes.has(row.code) && (row.seq == null || row.seq < LEGACY_SEQ_THRESHOLD)) {
+  const legacyExtras = rows.filter(row => !seededCodes.has(row.code) && (row.seq == null || row.seq < LEGACY_SEQ_THRESHOLD));
+  for (const row of legacyExtras) {
+    if (row.seq !== n) {
       row.seq = n;
       await put(storeName, row);
-      n++;
+      fixed++;
     }
+    n++;
   }
+  return fixed;
 }
 
 // 薬・サプリのフラグ(kindFlag)未設定の既存データを「薬」に一括設定する（1回限りの移行処理）
 async function migrateMedicineKindFlag() {
+  let fixed = 0;
   const medicines = await getAll('medicineMaster');
   for (const m of medicines) {
     if (!m.kindFlag) {
       m.kindFlag = 'DRUG';
       await put('medicineMaster', m);
+      fixed++;
     }
   }
+  return fixed;
 }
 
 async function ensureCodeMaster(entries) {
+  let added = 0;
   const existing = await getAll('codeMaster');
   const existingKeys = new Set(existing.map(r => `${r.category}::${r.code}`));
   for (const e of entries) {
     if (!existingKeys.has(`${e.category}::${e.code}`)) {
-      await put('codeMaster', { category: e.category, code: e.code, name: e.name });
+      await put('codeMaster', { category: e.category, code: e.code, name: e.name, abbr: e.abbr || '' });
+      added++;
     }
   }
+  return added;
 }
 
 async function ensureCatMaster(entries) {
+  let added = 0;
   for (const e of entries) {
     const existing = await get('catMaster', e.code);
-    if (!existing) await put('catMaster', { ...e });
+    if (!existing) { await put('catMaster', { ...e }); added++; }
   }
+  return added;
 }
 
 async function ensureFoodMaster(entries) {
+  let added = 0;
   for (const e of entries) {
     const existing = await get('foodMaster', e.code);
-    if (!existing) await put('foodMaster', { ...e });
+    if (!existing) { await put('foodMaster', { ...e }); added++; }
   }
+  return added;
 }
 
 async function ensureMedicineMaster(entries) {
+  let added = 0;
   for (const e of entries) {
     const existing = await get('medicineMaster', e.code);
-    if (!existing) await put('medicineMaster', { ...e });
+    if (!existing) { await put('medicineMaster', { ...e }); added++; }
   }
+  return added;
 }
 
 async function ensureRecipeMaster(entries) {
+  let added = 0;
   for (const e of entries) {
     const existing = await get('recipeMaster', e.code);
-    if (!existing) await put('recipeMaster', { ...e });
+    if (!existing) { await put('recipeMaster', { ...e }); added++; }
   }
+  return added;
 }
 
 export async function renderDashboard(container, callbacks) {
@@ -1173,6 +1206,11 @@ async function renderIO(content, callbacks) {
         <button id="dayImportBtn" class="btn-primary">取込</button>
       </div>
       <div class="card">
+        <div class="card-title">データコンバート</div>
+        <p class="muted">js/initial-data.js との差分マージ、旧データの補正、カロリーキャッシュの再集計などをまとめて実行します。既存データは削除されません。何度実行しても安全です（アプリ更新後やinitial-data.js編集後に押してください）。</p>
+        <button id="convertBtn" class="btn-primary">データコンバート実行</button>
+      </div>
+      <div class="card">
         <div class="card-title">初期化</div>
         <p class="muted">保存されているデータをすべて削除し、js/initial-data.js の内容だけを反映し直します。元に戻せません。</p>
         <button id="resetBtn" class="btn-small danger">初期化する</button>
@@ -1212,6 +1250,27 @@ async function renderIO(content, callbacks) {
       alert(msg);
     } catch (err) {
       alert('取込に失敗しました: ' + err.message);
+    }
+  });
+  content.querySelector('#convertBtn').addEventListener('click', async () => {
+    const btn = content.querySelector('#convertBtn');
+    btn.disabled = true;
+    btn.textContent = '実行中…';
+    try {
+      const r = await seedDefaults();
+      if (callbacks && callbacks.onCatsChanged) callbacks.onCatsChanged();
+      const addedTotal = r.codeAdded + r.catAdded + r.foodAdded + r.medicineAdded + r.recipeAdded;
+      const msg = `データコンバートが完了しました\n\n`
+        + `マスタ追加: ${addedTotal}件（コード${r.codeAdded} / 猫${r.catAdded} / 餌${r.foodAdded} / 薬・サプリ${r.medicineAdded} / レシピ${r.recipeAdded}）\n`
+        + `薬・サプリのkindFlag補正: ${r.kindFlagFixed}件\n`
+        + `登録順(seq)補正: ${r.seqFixed}件\n`
+        + `カロリーキャッシュ更新: ${r.kcalUpdated}件`;
+      alert(msg);
+    } catch (err) {
+      alert('データコンバートに失敗しました: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'データコンバート実行';
     }
   });
   content.querySelector('#resetBtn').addEventListener('click', async () => {

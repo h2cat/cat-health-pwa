@@ -1,6 +1,6 @@
 import { get, put, remove, getByIndex } from './db.js';
 import { escapeHtml, logicalTodayStr, formatDate, calcCalorie, floorToTenMinutes, timeToHHMM, abbrOrName, memoFlagHtml, addDaysStr, formatDisplayTime, normalizeEntryTime, quickTimeHourOptions, quickTimeMinuteOptions, nearestQuickTime, normalizeFavoriteSourceCodes } from './utils.js';
-import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY, FOOD_FORM_CATEGORY, FOOD_TYPE_CATEGORY, MAKER_CATEGORY, recomputeDailyKcal } from './dashboard.js';
+import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFECT_CATEGORY, DAILY_EVENT_CATEGORY, FOOD_FORM_CATEGORY, FOOD_TYPE_CATEGORY, MAKER_CATEGORY, MEMO_CATEGORY, recomputeDailyKcal } from './dashboard.js';
 
 // buildDateTimeFieldHtmlで組み立てたUIの挙動を配線する。
 // initialDisplayHHMM: クイック選択の初期値を決めるための基準時刻（"HH:MM"、通常表記）。夜間や未指定ならnullで現在時刻に近い値を使う。
@@ -72,7 +72,7 @@ function getState(catCode) {
 }
 
 const SECTIONS = [
-  { key: 'feeding', icon: '🍴', title: '給餌管理' },
+  { key: 'feeding', icon: '🍽️', title: '給餌管理' },
   { key: 'medicine', icon: '💊', title: 'サプリ・投薬管理' },
   { key: 'poop', icon: '💩', title: 'うんち記録' },
   { key: 'vomit', icon: '🤮', title: 'ゲロ記録' },
@@ -122,6 +122,7 @@ export async function renderCatTab(container, catCode) {
     state.editingFeedId = null;
     state.editingMedId = null;
     state.editingExcId = null;
+    state.editingMemoId = null;
     renderCatTab(container, catCode);
   }));
 
@@ -725,38 +726,72 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
   });
 }
 
-// ===== メモ（時間単位のメモのみ） =====
+// ===== メモ（時間単位のメモ＋カテゴリタグ） =====
+function memoCategoryMark(c) {
+  return (c && (c.abbr || c.name)) || '';
+}
+
 async function renderMemoSection(host, cat, state, refreshCalendar, rerenderAll) {
+  const categories = (await getByIndex('codeMaster', 'byCategory', MEMO_CATEGORY)).filter(c => c.code !== '');
   const entries = (await getByIndex('memoLog', 'byCatDate', [cat.code, state.date])).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  function categoryMarksFor(e) {
+    return (e.categories || []).map(code => {
+      const c = categories.find(x => x.code === code);
+      return c ? memoCategoryMark(c) : code;
+    }).join(' ');
+  }
+
+  const editingEntry = state.editingMemoId ? entries.find(e => e.id === state.editingMemoId) : null;
 
   const rowsHtml = entries.map(e => `<tr>
     <td>${escapeHtml(formatDisplayTime(e.time))}</td>
+    <td>${escapeHtml(categoryMarksFor(e)) || '-'}</td>
     <td>${escapeHtml(e.memo || '-')}</td>
+    <td><button class="btn-tiny icon-btn" data-edit-memo="${e.id}" title="編集">✏️</button></td>
     <td><button class="btn-tiny icon-btn danger" data-del-memo="${e.id}" title="削除">🗑️</button></td>
   </tr>`).join('');
+
+  const editingCategoryCode = editingEntry ? (editingEntry.categories || [])[0] : null;
+  const catChecksHtml = categories.map(c => `<label class="chk"><input type="radio" name="memoCat" class="memo-cat-chk" value="${escapeHtml(c.code)}" ${editingCategoryCode === c.code ? 'checked' : ''}> ${escapeHtml(c.abbr ? `${c.abbr} ${c.name}` : c.name)}</label>`).join('');
 
   host.innerHTML = `
     <div class="card">
       <div class="card-title">メモ</div>
-      <table class="tbl"><thead><tr><th>時刻</th><th>メモ</th><th></th></tr></thead>
-      <tbody>${rowsHtml || '<tr><td colspan="3" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
+      <table class="tbl"><thead><tr><th>時刻</th><th>カテゴリ</th><th>メモ</th><th></th><th></th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="5" class="muted">この日はまだ記録がありません</td></tr>'}</tbody></table>
       <div class="feed-form">
-        ${buildDateTimeFieldHtml('memo', state.date, floorToTenMinutes(nowTimeStr()), false)}
-        <div class="field"><label>メモ</label><input id="memoText" class="required-input"></div>
-        <button id="memoSave" class="btn-primary">入力確定</button>
+        ${editingEntry ? '<div class="editing-banner">記録を編集中<button id="memoCancelEdit" class="btn-tiny">キャンセル</button></div>' : ''}
+        ${buildDateTimeFieldHtml('memo', editingEntry ? editingEntry.date : state.date, editingEntry ? (/^\d{1,2}:\d{2}$/.test(formatDisplayTime(editingEntry.time)) ? formatDisplayTime(editingEntry.time) : '') : floorToTenMinutes(nowTimeStr()), editingEntry && formatDisplayTime(editingEntry.time) === '夜間')}
+        <div class="field"><label>カテゴリ（1つ選択）</label><div class="chk-list required-input">${catChecksHtml || '<span class="muted">コードマスタの「メモカテゴリ」にコードを追加してください</span>'}</div></div>
+        <div class="field"><label>メモ</label><input id="memoText" value="${editingEntry ? escapeHtml(editingEntry.memo || '') : ''}"></div>
+        <button id="memoSave" class="btn-primary">${editingEntry ? '更新' : '入力確定'}</button>
       </div>
     </div>
   `;
 
   const dateInput = host.querySelector('#memoDate');
-  const { timeInput, nightChk } = wireTimeField(host, 'memo', null);
+  const { timeInput, nightChk } = wireTimeField(host, 'memo', editingEntry && formatDisplayTime(editingEntry.time) !== '夜間' ? formatDisplayTime(editingEntry.time) : null);
 
   host.querySelectorAll('[data-del-memo]').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('この記録を削除しますか？')) return;
-    await remove('memoLog', Number(btn.dataset.delMemo));
+    const delId = Number(btn.dataset.delMemo);
+    await remove('memoLog', delId);
+    if (state.editingMemoId === delId) state.editingMemoId = null;
     renderMemoSection(host, cat, state, refreshCalendar, rerenderAll);
     if (refreshCalendar) refreshCalendar();
   }));
+
+  host.querySelectorAll('[data-edit-memo]').forEach(btn => btn.addEventListener('click', () => {
+    state.editingMemoId = Number(btn.dataset.editMemo);
+    renderMemoSection(host, cat, state, refreshCalendar, rerenderAll);
+  }));
+
+  const cancelEditBtn = host.querySelector('#memoCancelEdit');
+  if (cancelEditBtn) cancelEditBtn.addEventListener('click', () => {
+    state.editingMemoId = null;
+    renderMemoSection(host, cat, state, refreshCalendar, rerenderAll);
+  });
 
   const saveBtn = host.querySelector('#memoSave');
   if (saveBtn) saveBtn.addEventListener('click', async () => {
@@ -765,8 +800,17 @@ async function renderMemoSection(host, cat, state, refreshCalendar, rerenderAll)
     const time = nightChk.checked ? '99:00' : normalizeEntryTime(floorToTenMinutes(timeInput.value));
     if (!time) { alert('時刻を入力してください'); return; }
     const memo = host.querySelector('#memoText').value;
-    if (!memo) { alert('メモを入力してください'); return; }
-    await put('memoLog', { catCode: cat.code, date: entryDate, time, memo });
+    const categoryCodes = Array.from(host.querySelectorAll('.memo-cat-chk:checked')).map(c => c.value);
+    if (categoryCodes.length === 0) { alert('カテゴリを選択してください'); return; }
+    const data = { catCode: cat.code, date: entryDate, time, memo, categories: categoryCodes };
+    if (editingEntry) {
+      if (!confirm('この内容で更新しますか？')) return;
+      data.id = editingEntry.id;
+      await put('memoLog', data);
+      state.editingMemoId = null;
+    } else {
+      await put('memoLog', data);
+    }
     if (entryDate !== state.date) {
       state.date = entryDate;
       if (rerenderAll) { rerenderAll(); return; }
@@ -776,10 +820,10 @@ async function renderMemoSection(host, cat, state, refreshCalendar, rerenderAll)
   });
 }
 
-// ===== 日々の集約ログ（🍴💊💩🤮📝を時刻順にまとめて表示） =====
+// ===== 日々の集約ログ（🍽️💊💩🤮📝を時刻順にまとめて表示） =====
 async function buildDailyLogRowsHtml(cat, state) {
   const { getAll } = await import('./db.js');
-  const [feedRows, medRows, excRows, memoRows, allFoods, allRecipes, allMedicines, units, stoolStates, vomitStates] = await Promise.all([
+  const [feedRows, medRows, excRows, memoRows, allFoods, allRecipes, allMedicines, units, stoolStates, vomitStates, memoCategories] = await Promise.all([
     getByIndex('feedingLog', 'byCatDate', [cat.code, state.date]),
     getByIndex('medicineLog', 'byCatDate', [cat.code, state.date]),
     getByIndex('excretionLog', 'byCatDate', [cat.code, state.date]),
@@ -789,7 +833,8 @@ async function buildDailyLogRowsHtml(cat, state) {
     getAll('medicineMaster'),
     getByIndex('codeMaster', 'byCategory', MED_UNIT_CATEGORY),
     getByIndex('codeMaster', 'byCategory', STOOL_STATE_CATEGORY),
-    getByIndex('codeMaster', 'byCategory', VOMIT_STATE_CATEGORY)
+    getByIndex('codeMaster', 'byCategory', VOMIT_STATE_CATEGORY),
+    getByIndex('codeMaster', 'byCategory', MEMO_CATEGORY)
   ]);
 
   function unitName(code) {
@@ -810,7 +855,7 @@ async function buildDailyLogRowsHtml(cat, state) {
     const src = resolveFeedSource(e, allFoods, allRecipes);
     const amount = e.eatenAmount != null ? `${e.eatenAmount}g` : '';
     const calPart = ` 🔥${e.calorie || 0}`;
-    rows.push({ time: e.time, html: `<div class="daily-log-row">🍴${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(src.abbr)}${amount ? ' ' + amount : ''}${calPart} ${memoFlagHtml(e.memo)}</div>` });
+    rows.push({ time: e.time, html: `<div class="daily-log-row">🍽️${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(src.abbr)}${amount ? ' ' + amount : ''}${calPart} ${memoFlagHtml(e.memo)}</div>` });
   });
 
   medRows.forEach(e => {
@@ -826,7 +871,11 @@ async function buildDailyLogRowsHtml(cat, state) {
   });
 
   memoRows.forEach(e => {
-    rows.push({ time: e.time, html: `<div class="daily-log-row">📝${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(e.memo || '')}</div>` });
+    const catMarks = (e.categories || []).map(code => {
+      const c = memoCategories.find(x => x.code === code);
+      return c ? memoCategoryMark(c) : code;
+    }).join('');
+    rows.push({ time: e.time, html: `<div class="daily-log-row">📝${catMarks ? escapeHtml(catMarks) + ' ' : ''}${escapeHtml(timeToHHMM(formatDisplayTime(e.time)))} ${escapeHtml(e.memo || '')}</div>` });
   });
 
   rows.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -857,7 +906,8 @@ async function renderDailySection(host, cat, state, refreshCalendar, rerenderAll
 
   const eventChecksHtml = events.map(e => {
     const checked = existingEvents.includes(e.code) ? 'checked' : '';
-    return `<label class="chk"><input type="checkbox" class="daily-event-chk" value="${escapeHtml(e.code)}" ${checked}> ${escapeHtml(e.name)}</label>`;
+    const label = e.abbr ? `${e.abbr} ${e.name}` : e.name;
+    return `<label class="chk"><input type="checkbox" class="daily-event-chk" value="${escapeHtml(e.code)}" ${checked}> ${escapeHtml(label)}</label>`;
   }).join('');
 
   const feedRowsForCal = await getByIndex('feedingLog', 'byCatDate', [cat.code, state.date]);
@@ -947,13 +997,17 @@ async function buildCalendarFilterOptionsHtml(section) {
     const states = (await getByIndex('codeMaster', 'byCategory', category)).filter(s => s.code !== '');
     return '<option value="">すべて</option>' + states.map(s => `<option value="${escapeHtml(s.code)}">${escapeHtml(s.name)}</option>`).join('');
   }
+  if (section === 'memo') {
+    const categories = (await getByIndex('codeMaster', 'byCategory', MEMO_CATEGORY)).filter(c => c.code !== '');
+    return '<option value="">すべて</option>' + categories.map(c => `<option value="${escapeHtml(c.code)}">${escapeHtml(c.abbr ? `${c.abbr} ${c.name}` : c.name)}</option>`).join('');
+  }
   return '';
 }
 
 async function renderCalendarSection(host, cat, state, container) {
   if (!state.calFilter) state.calFilter = {};
   const section = state.activeSection;
-  const hasFilter = section === 'feeding' || section === 'medicine' || section === 'poop' || section === 'vomit';
+  const hasFilter = section === 'feeding' || section === 'medicine' || section === 'poop' || section === 'vomit' || section === 'memo';
   const filterValue = state.calFilter[section] || '';
 
   const dailyRows = await getByIndex('dailyLog', 'byCat', cat.code);
@@ -965,7 +1019,7 @@ async function renderCalendarSection(host, cat, state, container) {
   let poopDates = null, vomitDates = null, kcalByDate = null;
 
   if (section === 'feeding') {
-    markerIcon = '🍴';
+    markerIcon = '🍽️';
     const rows = (await getByIndex('feedingLog', 'byCat', cat.code)).filter(e => e.kind === 'INTAKE');
     const filtered = filterValue
       ? rows.filter(e => `${e.sourceType === 'RECIPE' ? 'R' : 'F'}:${e.sourceCode}` === filterValue)
@@ -983,8 +1037,10 @@ async function renderCalendarSection(host, cat, state, container) {
     const filtered = filterValue ? rows.filter(e => excretionStateCodes(e).includes(filterValue)) : rows;
     markedDates = new Set(filtered.map(e => e.date));
   } else if (section === 'memo') {
+    markerIcon = '📝';
     const rows = await getByIndex('memoLog', 'byCat', cat.code);
-    markedDates = new Set(rows.map(e => e.date));
+    const filtered = filterValue ? rows.filter(e => (e.categories || []).includes(filterValue)) : rows;
+    markedDates = new Set(filtered.map(e => e.date));
   } else if (section === 'daily') {
     dailyMode = true;
     const excretionRows = await getByIndex('excretionLog', 'byCat', cat.code);
@@ -1020,8 +1076,6 @@ async function renderCalendarSection(host, cat, state, container) {
       const kcal = kcalByDate.get(dateStr) || 0;
       if (marks || kcal) markedClass = 'marked';
       bodyHtml = `${marks ? `<div class="cal-daily-marks">${marks}</div>` : ''}${kcal ? `<div class="cal-kcal">🔥${Math.round(kcal)}</div>` : ''}`;
-    } else if (section === 'memo') {
-      if (markedDates.has(dateStr)) { markedClass = 'marked'; bodyHtml = '<span class="dot"></span>'; }
     } else if (markedDates.has(dateStr)) {
       markedClass = 'marked';
       bodyHtml = `<span class="cal-mark-icon">${markerIcon}</span>`;

@@ -1,5 +1,5 @@
 import { openDB, getAll } from './db.js';
-import { seedDefaults, renderDashboard } from './dashboard.js';
+import { renderDashboard } from './dashboard.js';
 import { renderCatTab } from './catTab.js';
 
 const tabBar = document.getElementById('tabBar');
@@ -7,9 +7,10 @@ const tabContent = document.getElementById('tabContent');
 const updateBtn = document.getElementById('updateBtn');
 let activeTab = 'dashboard';
 
+// マスタのinitial-data.jsとのマージや各種データ補正は起動時には自動実行しない。
+// 設定＞データ入出力（IO）画面の「データコンバート実行」ボタンから手動で行う。
 async function init() {
   await openDB();
-  await seedDefaults();
   await renderTabBar();
   await showTab(activeTab);
 
