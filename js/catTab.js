@@ -738,7 +738,8 @@ async function renderMemoSection(host, cat, state, refreshCalendar, rerenderAll)
   function categoryMarksFor(e) {
     return (e.categories || []).map(code => {
       const c = categories.find(x => x.code === code);
-      return c ? memoCategoryMark(c) : code;
+      if (!c) return code;
+      return c.abbr ? `${c.abbr} ${c.name}` : c.name;
     }).join(' ');
   }
 

@@ -86,7 +86,7 @@ export const initialCodeMaster = [
   { category: 'MEMO_CATEGORY', code: '', name: 'メモカテゴリ' },
   { category: 'MEMO_CATEGORY', code: 'MEMO', name: 'メモ', abbr: '📝' },
   { category: 'MEMO_CATEGORY', code: 'COUGH', name: 'せき', abbr: '😷' },
-  { category: 'MEMO_CATEGORY', code: 'DANGER', name: '異常事態', abbr: '⚠' },
+  { category: 'MEMO_CATEGORY', code: 'DANGER', name: '異常事態', abbr: '⚠️' },
 ];
 
 // ----- 猫マスタ -----
