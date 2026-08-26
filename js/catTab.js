@@ -1083,7 +1083,7 @@ async function renderCalendarSection(host, cat, state, container) {
   }
 
   host.innerHTML = `
-    <div class="card">
+    <div class="card calendar-card">
       <div class="card-title cal-nav">
         <button id="prevMonth" class="btn-tiny">＜</button>
         <span>${y}年${m + 1}月</span>

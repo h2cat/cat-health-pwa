@@ -272,18 +272,21 @@ button {
 .sel-date { font-size: 14px; color: #666; }
 
 .cal-nav { justify-content: space-between; }
+/* カレンダーはスマホでの視認性を優先し、専用カードだけ余白を切り詰めて7列分の横幅を稼ぐ
+   （他の.card利用箇所には影響させない） */
+.calendar-card { padding: 10px 6px; }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: 3px;
   text-align: center;
 }
 .cal-weekday { font-size: 12px; color: #999; margin-bottom: 4px; }
 .cal-cell {
   position: relative;
-  padding: 8px 0;
+  padding: 7px 0;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
   background: #faf9f7;
 }
 .cal-cell.empty { background: transparent; }
@@ -311,18 +314,18 @@ button {
 
 .cal-mark-icon {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   margin-top: 2px;
 }
 .cal-daily-marks {
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1;
   margin-top: 2px;
   letter-spacing: -1px;
 }
 .cal-kcal {
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.2;
   margin-top: 1px;
   opacity: 0.85;
