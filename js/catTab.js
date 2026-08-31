@@ -60,13 +60,28 @@ function buildDateTimeFieldHtml(idPrefix, dateValue, timeValue, nightChecked) {
   </div>`;
 }
 
-const stateMap = {}; // catCode -> { date, calendarMonth (Date), activeSection }
+// 日付・カレンダー月・選択中タブ・カレンダー絞り込みは「今どの猫を見ているか」に関わらず
+// 共通の状態にしたい（猫を切り替えた時にタブや日付が変わると違和感があるため）。
+// 一方、入力フォームの編集中状態(どのレコードを編集中か)は猫ごとの記録に紐づくため、猫ごとに保持する。
+const navState = (() => {
+  const logicalToday = logicalTodayStr();
+  const [ly, lm] = logicalToday.split('-').map(Number);
+  return { date: logicalToday, calendarMonth: new Date(ly, lm - 1, 1), activeSection: 'feeding', calFilter: {} };
+})();
+
+const stateMap = {}; // catCode -> { editingFeedId, editingMedId, editingExcId, editingMemoId }（date等はnavStateに委譲）
 
 function getState(catCode) {
   if (!stateMap[catCode]) {
-    const logicalToday = logicalTodayStr();
-    const [ly, lm] = logicalToday.split('-').map(Number);
-    stateMap[catCode] = { date: logicalToday, calendarMonth: new Date(ly, lm - 1, 1), activeSection: 'feeding' };
+    const s = {};
+    for (const key of ['date', 'calendarMonth', 'activeSection', 'calFilter']) {
+      Object.defineProperty(s, key, {
+        get() { return navState[key]; },
+        set(v) { navState[key] = v; },
+        enumerable: true
+      });
+    }
+    stateMap[catCode] = s;
   }
   return stateMap[catCode];
 }
@@ -456,10 +471,6 @@ async function renderFeedingSection(host, cat, state, refreshCalendar, rerenderA
     if (editingEntry && editingEntry.date && editingEntry.date !== entryDate) {
       await recomputeDailyKcal(cat.code, editingEntry.date);
     }
-    if (entryDate !== state.date) {
-      state.date = entryDate;
-      if (rerenderAll) { rerenderAll(); return; }
-    }
     renderFeedingSection(host, cat, state, refreshCalendar, rerenderAll);
     if (refreshCalendar) refreshCalendar();
   });
@@ -616,10 +627,6 @@ async function renderMedicineSection(host, cat, state, refreshCalendar, rerender
     } else {
       await put('medicineLog', data);
     }
-    if (entryDate !== state.date) {
-      state.date = entryDate;
-      if (rerenderAll) { rerenderAll(); return; }
-    }
     renderMedicineSection(host, cat, state, refreshCalendar, rerenderAll);
     if (refreshCalendar) refreshCalendar();
   });
@@ -717,10 +724,6 @@ async function renderExcretionTypeSection(host, cat, state, refreshCalendar, fix
     } else {
       await put('excretionLog', data);
     }
-    if (entryDate !== state.date) {
-      state.date = entryDate;
-      if (rerenderAll) { rerenderAll(); return; }
-    }
     renderExcretionTypeSection(host, cat, state, refreshCalendar, fixedType, rerenderAll);
     if (refreshCalendar) refreshCalendar();
   });
@@ -807,10 +810,6 @@ async function renderMemoSection(host, cat, state, refreshCalendar, rerenderAll)
       state.editingMemoId = null;
     } else {
       await put('memoLog', data);
-    }
-    if (entryDate !== state.date) {
-      state.date = entryDate;
-      if (rerenderAll) { rerenderAll(); return; }
     }
     renderMemoSection(host, cat, state, refreshCalendar, rerenderAll);
     if (refreshCalendar) refreshCalendar();
@@ -959,10 +958,6 @@ async function renderDailySection(host, cat, state, refreshCalendar, rerenderAll
     if (freshExisting) data.id = freshExisting.id;
     await put('dailyLog', data);
     alert('保存しました');
-    if (entryDate !== state.date) {
-      state.date = entryDate;
-      if (rerenderAll) { rerenderAll(); return; }
-    }
     renderDailySection(host, cat, state, refreshCalendar, rerenderAll);
     if (refreshCalendar) refreshCalendar();
   });
