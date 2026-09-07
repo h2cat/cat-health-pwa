@@ -623,6 +623,7 @@ async function renderFoodMaster(content) {
           <div class="kv">給仕デフォルト量: ${escapeHtml(f.defaultAmountG)} g</div>
           <div class="actions">
             <button class="btn-small icon-btn" data-edit-food="${escapeHtml(f.code)}" title="編集">✏️</button>
+            <button class="btn-small icon-btn" data-dup-food="${escapeHtml(f.code)}" title="複製">📋</button>
             <button class="btn-small icon-btn danger" data-del-food="${escapeHtml(f.code)}" title="削除">🗑️</button>
           </div>
         </div>` : ''}
@@ -652,6 +653,24 @@ async function renderFoodMaster(content) {
       const formHost = el(`<div class="card"><div class="card-title">餌編集: ${escapeHtml(f.name)}</div><div></div></div>`);
       btn.closest('.card').replaceWith(formHost);
       renderFoodForm(formHost.querySelector('div:last-child'), f, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content), () => renderFoodMaster(content));
+    }));
+
+    listHost.querySelectorAll('[data-dup-food]').forEach(btn => btn.addEventListener('click', async () => {
+      const code = btn.dataset.dupFood;
+      const f = await get('foodMaster', code);
+      if (!f) return;
+      // コードのサフィックスに_COPYを追加して複製する。既に_COPY済みのコードがある場合は連番で回避する。
+      let newCode = `${code}_COPY`;
+      let n = 2;
+      while (await get('foodMaster', newCode)) {
+        newCode = `${code}_COPY${n}`;
+        n++;
+      }
+      const dup = { ...f, code: newCode, seq: Date.now() };
+      await put('foodMaster', dup);
+      const formHost = el(`<div class="card"><div class="card-title">餌編集: ${escapeHtml(dup.name)}</div><div></div></div>`);
+      btn.closest('.card').replaceWith(formHost);
+      renderFoodForm(formHost.querySelector('div:last-child'), dup, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content), () => renderFoodMaster(content));
     }));
 
     listHost.querySelectorAll('[data-del-food]').forEach(btn => btn.addEventListener('click', async () => {
