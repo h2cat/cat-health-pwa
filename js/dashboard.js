@@ -659,18 +659,20 @@ async function renderFoodMaster(content) {
       const code = btn.dataset.dupFood;
       const f = await get('foodMaster', code);
       if (!f) return;
-      // コードのサフィックスに_COPYを追加して複製する。既に_COPY済みのコードがある場合は連番で回避する。
+      // コードのサフィックスに_COPYを追加した案を初期値にするが、まだDBには保存しない
+      // （保存するまではコード欄も編集可能にし、そのまま任意のコードに書き換えて登録できるようにする）。
+      // 既に_COPY済みのコードがある場合は連番で衝突回避する。
       let newCode = `${code}_COPY`;
       let n = 2;
       while (await get('foodMaster', newCode)) {
         newCode = `${code}_COPY${n}`;
         n++;
       }
-      const dup = { ...f, code: newCode, seq: Date.now() };
-      await put('foodMaster', dup);
-      const formHost = el(`<div class="card"><div class="card-title">餌編集: ${escapeHtml(dup.name)}</div><div></div></div>`);
+      const dup = { ...f, code: newCode };
+      delete dup.seq;
+      const formHost = el(`<div class="card"><div class="card-title">餌複製: ${escapeHtml(f.name)}</div><div></div></div>`);
       btn.closest('.card').replaceWith(formHost);
-      renderFoodForm(formHost.querySelector('div:last-child'), dup, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content), () => renderFoodMaster(content));
+      renderFoodForm(formHost.querySelector('div:last-child'), dup, formCodes, typeCodes, makerCodes, () => renderFoodMaster(content), () => renderFoodMaster(content), { forceNewCode: true });
     }));
 
     listHost.querySelectorAll('[data-del-food]').forEach(btn => btn.addEventListener('click', async () => {
@@ -698,23 +700,25 @@ async function renderFoodMaster(content) {
   }
 }
 
-function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSaved, onCancel) {
-  const isEdit = !!existing;
-  const options = formCodes.map(fc => `<option value="${escapeHtml(fc.code)}" ${isEdit && existing.formCode === fc.code ? 'selected' : ''}>${escapeHtml(fc.name)}</option>`).join('');
-  const typeOptions = typeCodes.map(tc => `<option value="${escapeHtml(tc.code)}" ${isEdit && existing.typeCode === tc.code ? 'selected' : ''}>${escapeHtml(tc.name)}</option>`).join('');
-  const makerOptions = makerCodes.map(mc => `<option value="${escapeHtml(mc.code)}" ${isEdit && existing.makerCode === mc.code ? 'selected' : ''}>${escapeHtml(mc.name)}</option>`).join('');
+function renderFoodForm(host, existing, formCodes, typeCodes, makerCodes, onSaved, onCancel, opts = {}) {
+  // forceNewCode: 複製直後など、既存データの値をプレフィルしつつコード欄は編集可能・新規追加として保存したい場合に使う
+  const isEdit = !!existing && !opts.forceNewCode;
+  const prefill = existing; // 表示値のプレフィルはisEditに関わらずexistingがあれば使う
+  const options = formCodes.map(fc => `<option value="${escapeHtml(fc.code)}" ${prefill && prefill.formCode === fc.code ? 'selected' : ''}>${escapeHtml(fc.name)}</option>`).join('');
+  const typeOptions = typeCodes.map(tc => `<option value="${escapeHtml(tc.code)}" ${prefill && prefill.typeCode === tc.code ? 'selected' : ''}>${escapeHtml(tc.name)}</option>`).join('');
+  const makerOptions = makerCodes.map(mc => `<option value="${escapeHtml(mc.code)}" ${prefill && prefill.makerCode === mc.code ? 'selected' : ''}>${escapeHtml(mc.name)}</option>`).join('');
   host.innerHTML = `
-    <div class="field"><label>コード</label><input id="ff_code" class="required-input" ${isEdit ? 'disabled' : ''} value="${isEdit ? escapeHtml(existing.code) : ''}"></div>
+    <div class="field"><label>コード</label><input id="ff_code" class="required-input" ${isEdit ? 'disabled' : ''} value="${prefill ? escapeHtml(prefill.code) : ''}"></div>
     <div class="field"><label>メーカー</label><select id="ff_maker"><option value="">未選択</option>${makerOptions || ''}</select>${makerCodes.length === 0 ? '<span class="muted">コードマスタの「メーカー」にコードを追加してください</span>' : ''}</div>
-    <div class="field"><label>名称</label><input id="ff_name" class="required-input" value="${isEdit ? escapeHtml(existing.name) : ''}"></div>
-    <div class="field"><label>略称（ログ表示用）</label><input id="ff_abbr" value="${isEdit ? escapeHtml(existing.abbr || '') : ''}"></div>
-    <div class="field"><label>カロリー</label><input id="ff_cal" type="text" placeholder="例: 350 または 75/85" value="${isEdit ? existing.caloriePer100g : ''}">
+    <div class="field"><label>名称</label><input id="ff_name" class="required-input" value="${prefill ? escapeHtml(prefill.name) : ''}"></div>
+    <div class="field"><label>略称（ログ表示用）</label><input id="ff_abbr" value="${prefill ? escapeHtml(prefill.abbr || '') : ''}"></div>
+    <div class="field"><label>カロリー</label><input id="ff_cal" type="text" placeholder="例: 350 または 75/85" value="${prefill ? prefill.caloriePer100g : ''}">
       <span class="muted">100gあたりのkcal、または「小袋のkcal/内容量g」（例: 75/85）で入力可</span>
       <span id="ff_cal_preview" class="muted"></span>
     </div>
     <div class="field"><label>形態</label><select id="ff_form"><option value="">未選択</option>${options}</select></div>
     <div class="field"><label>種類</label><select id="ff_type"><option value="">未選択</option>${typeOptions}</select></div>
-    <div class="field"><label>給仕デフォルト量(g)</label><input id="ff_default" type="number" step="0.1" value="${isEdit ? existing.defaultAmountG : ''}"></div>
+    <div class="field"><label>給仕デフォルト量(g)</label><input id="ff_default" type="number" step="0.1" value="${prefill ? prefill.defaultAmountG : ''}"></div>
     <div class="form-actions">
       <button id="ff_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
       <button id="ff_cancel" class="btn-small">キャンセル</button>
