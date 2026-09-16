@@ -422,6 +422,11 @@ tr.serve-row {
   gap: 8px;
   flex-wrap: wrap;
 }
+.field-title-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .datetime-row {
   display: flex;
   align-items: center;

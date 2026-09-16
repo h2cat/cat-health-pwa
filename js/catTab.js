@@ -63,7 +63,10 @@ function buildDateTimeFieldHtml(idPrefix, dateValue, timeValue, nightChecked) {
   return `<div class="field">
     <div class="field-title-row">
       <label>日時</label>
-      <label class="chk"><input type="checkbox" id="${idPrefix}NightChk" ${nightChecked ? 'checked' : ''}> 夜間（時刻不明）</label>
+      <div class="field-title-row-right">
+        <label class="chk"><input type="checkbox" id="${idPrefix}NightChk" ${nightChecked ? 'checked' : ''}> 夜間（時刻不明）</label>
+        <button class="btn-tiny icon-btn" id="${idPrefix}NowBtn" title="現在日時をセット">🕐</button>
+      </div>
     </div>
     <div class="datetime-row">
       <input id="${idPrefix}Date" type="date" class="date-input required-input" value="${escapeHtml(dateValue)}">
@@ -72,7 +75,6 @@ function buildDateTimeFieldHtml(idPrefix, dateValue, timeValue, nightChecked) {
         <select id="${idPrefix}TimeHourQuick" class="quick-time-select required-input">${hourOptions}</select>時
         <select id="${idPrefix}TimeMinQuick" class="quick-time-select required-input">${minOptions}</select>分
       </div>
-      <button class="btn-tiny icon-btn" id="${idPrefix}NowBtn" title="現在日時をセット">🕐</button>
     </div>
   </div>`;
 }
