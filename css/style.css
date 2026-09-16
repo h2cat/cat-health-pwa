@@ -312,6 +312,12 @@ button {
 }
 .cal-cell.selected.invalid-day .invalid-dot { color: #fff; }
 
+.trend-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .cal-mark-icon {
   display: block;
   font-size: 11px;

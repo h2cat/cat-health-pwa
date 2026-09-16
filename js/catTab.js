@@ -5,10 +5,12 @@ import { STOOL_STATE_CATEGORY, VOMIT_STATE_CATEGORY, MED_UNIT_CATEGORY, MED_EFFE
 // buildDateTimeFieldHtmlで組み立てたUIの挙動を配線する。
 // initialDisplayHHMM: クイック選択の初期値を決めるための基準時刻（"HH:MM"、通常表記）。夜間や未指定ならnullで現在時刻に近い値を使う。
 function wireTimeField(host, idPrefix, initialDisplayHHMM) {
+  const dateInput = host.querySelector(`#${idPrefix}Date`);
   const timeInput = host.querySelector(`#${idPrefix}Time`);
   const nightChk = host.querySelector(`#${idPrefix}NightChk`);
   const hourSel = host.querySelector(`#${idPrefix}TimeHourQuick`);
   const minSel = host.querySelector(`#${idPrefix}TimeMinQuick`);
+  const nowBtn = host.querySelector(`#${idPrefix}NowBtn`);
 
   const near = nearestQuickTime(initialDisplayHHMM || nowTimeStr());
   hourSel.value = near.hour;
@@ -31,12 +33,26 @@ function wireTimeField(host, idPrefix, initialDisplayHHMM) {
   nightChk.addEventListener('change', updateNightUI);
   updateNightUI();
 
+  // 画面を開いたままにしていると実際の時刻とズレるため、日付・時刻を今の日時に一括でセットし直すボタン
+  if (nowBtn) nowBtn.addEventListener('click', () => {
+    dateInput.value = logicalTodayStr();
+    nightChk.checked = false;
+    updateNightUI();
+    const nowNear = nearestQuickTime(nowTimeStr());
+    hourSel.value = nowNear.hour;
+    minSel.value = nowNear.min;
+    applyQuick();
+  });
+
   return { timeInput, nightChk, hourSel, minSel };
 }
 
 // 日付入力欄のHTML（すべての入力画面で日付を編集可能にするため共通化）
 function buildDateFieldHtml(idPrefix, dateValue) {
-  return `<div class="field"><label>日付</label><input id="${idPrefix}Date" type="date" value="${escapeHtml(dateValue)}"></div>`;
+  return `<div class="field"><label>日付</label><div class="datetime-row">
+    <input id="${idPrefix}Date" type="date" class="date-input" value="${escapeHtml(dateValue)}">
+    <button class="btn-tiny icon-btn" id="${idPrefix}NowBtn" title="今日の日付をセット">🕐</button>
+  </div></div>`;
 }
 
 // 日付＋時刻の入力欄（餈・薬・うんち/ゲロ・メモ共通）: 「日時」タイトル＋横に夜間チェックボックス、
@@ -56,6 +72,7 @@ function buildDateTimeFieldHtml(idPrefix, dateValue, timeValue, nightChecked) {
         <select id="${idPrefix}TimeHourQuick" class="quick-time-select required-input">${hourOptions}</select>時
         <select id="${idPrefix}TimeMinQuick" class="quick-time-select required-input">${minOptions}</select>分
       </div>
+      <button class="btn-tiny icon-btn" id="${idPrefix}NowBtn" title="現在日時をセット">🕐</button>
     </div>
   </div>`;
 }
@@ -93,6 +110,7 @@ const SECTIONS = [
   { key: 'vomit', icon: '🤮', title: 'ゲロ記録' },
   { key: 'memo', icon: '📝', title: 'メモ' },
   { key: 'daily', icon: '🏥', title: '日々管理' },
+  { key: 'graph', icon: '📊', title: 'グラフ' },
 ];
 
 export async function renderCatTab(container, catCode) {
@@ -153,6 +171,7 @@ export async function renderCatTab(container, catCode) {
   else if (state.activeSection === 'vomit') await renderExcretionTypeSection(sectionHost, cat, state, refreshCalendar, 'VOMIT', rerenderAll);
   else if (state.activeSection === 'daily') await renderDailySection(sectionHost, cat, state, refreshCalendar, rerenderAll);
   else if (state.activeSection === 'memo') await renderMemoSection(sectionHost, cat, state, refreshCalendar, rerenderAll);
+  else if (state.activeSection === 'graph') await renderGraphSection(sectionHost, cat, state, rerenderAll);
 
   await refreshCalendar();
 }
@@ -927,6 +946,10 @@ async function renderDailySection(host, cat, state, refreshCalendar, rerenderAll
     </div>
   `;
 
+  host.querySelector('#dailyNowBtn').addEventListener('click', () => {
+    host.querySelector('#dailyDate').value = logicalTodayStr();
+  });
+
   host.querySelector('#invalidDayChk').addEventListener('change', async (ev) => {
     const currentRows = await getByIndex('dailyLog', 'byCatDate', [cat.code, state.date]);
     const currentExisting = currentRows[0] || null;
@@ -946,7 +969,9 @@ async function renderDailySection(host, cat, state, refreshCalendar, rerenderAll
     // invalidフラグは他の操作(記録なしトグル)で更新されている可能性があるため直前に再取得する（対象は保存先の日付）
     const freshRows = await getByIndex('dailyLog', 'byCatDate', [cat.code, entryDate]);
     const freshExisting = freshRows[0] || null;
+    // kcalは給餈側でキャッシュ更新される値なので、ここでの保存で消さないよう既存値を引き継ぐ
     const data = {
+      ...(freshExisting || {}),
       catCode: cat.code,
       date: entryDate,
       weight: weightVal === '' ? null : Number(weightVal),
@@ -960,6 +985,119 @@ async function renderDailySection(host, cat, state, refreshCalendar, rerenderAll
     alert('保存しました');
     renderDailySection(host, cat, state, refreshCalendar, rerenderAll);
     if (refreshCalendar) refreshCalendar();
+  });
+}
+
+// ===== グラフ（体重・カロリー・尿量の月次推移） =====
+// series: [{day, value|null}, ...]（値が無い日はnull＝グラフを途切れさせる）
+function buildTrendChartSvg(series, daysInMonth, opts) {
+  const { color = '#d8792f', unit = '' } = opts || {};
+  const points = series.filter(p => p.value != null);
+  if (points.length === 0) return null;
+
+  let min = Math.min(...points.map(p => p.value));
+  let max = Math.max(...points.map(p => p.value));
+  if (min === max) { min -= 1; max += 1; }
+  const fmt = (v) => String(Math.round(v * 100) / 100);
+
+  const width = 300, height = 110;
+  const padLeft = 32, padRight = 8, padTop = 10, padBottom = 16;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+
+  const xFor = (day) => daysInMonth > 1 ? padLeft + ((day - 1) / (daysInMonth - 1)) * plotW : padLeft + plotW / 2;
+  const yFor = (v) => padTop + (1 - (v - min) / (max - min)) * plotH;
+
+  // 記録が連続している区間だけを線でつなぐ（記録の無い日はグラフを途切れさせる）
+  const runs = [];
+  let current = [];
+  series.forEach(p => {
+    if (p.value != null) { current.push(p); }
+    else if (current.length) { runs.push(current); current = []; }
+  });
+  if (current.length) runs.push(current);
+
+  const polylines = runs.filter(r => r.length >= 2).map(r =>
+    `<polyline points="${r.map(p => `${xFor(p.day).toFixed(1)},${yFor(p.value).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+  ).join('');
+
+  const dots = points.map(p =>
+    `<circle cx="${xFor(p.day).toFixed(1)}" cy="${yFor(p.value).toFixed(1)}" r="2.5" fill="${color}"><title>${escapeHtml(`${p.day}日: ${fmt(p.value)}${unit}`)}</title></circle>`
+  ).join('');
+
+  const last = points[points.length - 1];
+  const lastLabelX = Math.min(xFor(last.day) + 4, width - padRight - 30);
+  const lastLabelY = Math.max(yFor(last.value) - 6, padTop + 8);
+  const lastLabel = `<text x="${lastLabelX.toFixed(1)}" y="${lastLabelY.toFixed(1)}" font-size="9" fill="${color}">${escapeHtml(`${fmt(last.value)}${unit}`)}</text>`;
+
+  const gridMax = `<line x1="${padLeft}" y1="${padTop}" x2="${width - padRight}" y2="${padTop}" stroke="#eee" stroke-width="1"/><text x="1" y="${padTop + 3}" font-size="8" fill="#999">${escapeHtml(fmt(max))}</text>`;
+  const gridMin = `<line x1="${padLeft}" y1="${height - padBottom}" x2="${width - padRight}" y2="${height - padBottom}" stroke="#eee" stroke-width="1"/><text x="1" y="${height - padBottom + 3}" font-size="8" fill="#999">${escapeHtml(fmt(min))}</text>`;
+
+  const xLabelFirst = `<text x="${padLeft}" y="${height - 2}" font-size="8" fill="#999" text-anchor="start">1日</text>`;
+  const xLabelLast = `<text x="${width - padRight}" y="${height - 2}" font-size="8" fill="#999" text-anchor="end">${daysInMonth}日</text>`;
+
+  return `<svg viewBox="0 0 ${width} ${height}" class="trend-chart" role="img" aria-label="${escapeHtml(`推移グラフ、最新値 ${fmt(last.value)}${unit}`)}">${gridMax}${gridMin}${polylines}${dots}${lastLabel}${xLabelFirst}${xLabelLast}</svg>`;
+}
+
+const GRAPH_METRICS = [
+  { key: 'weight', field: 'weight', icon: '⚖️', title: '体重推移', unit: 'kg' },
+  { key: 'kcal', field: 'kcal', icon: '🔥', title: 'カロリー推移', unit: 'kcal' },
+  { key: 'urine', field: 'urineAmount', icon: '💧', title: '尿量推移', unit: 'ml' }
+];
+
+async function renderGraphSection(host, cat, state, rerenderAll) {
+  const y = state.calendarMonth.getFullYear();
+  const m = state.calendarMonth.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const monthPrefix = `${y}-${String(m + 1).padStart(2, '0')}-`;
+
+  const rowByDate = new Map(
+    (await getByIndex('dailyLog', 'byCat', cat.code))
+      .filter(r => r.date && r.date.startsWith(monthPrefix) && !r.invalid)
+      .map(r => [r.date, r])
+  );
+
+  function seriesFor(field) {
+    const arr = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${monthPrefix}${String(d).padStart(2, '0')}`;
+      const row = rowByDate.get(dateStr);
+      arr.push({ day: d, value: row && row[field] != null ? row[field] : null });
+    }
+    return arr;
+  }
+
+  const cardsHtml = GRAPH_METRICS.map(metric => {
+    const series = seriesFor(metric.field);
+    const svg = buildTrendChartSvg(series, daysInMonth, { unit: metric.unit });
+    const points = series.filter(p => p.value != null);
+    const last = points[points.length - 1];
+    const lastText = last ? `最新: ${last.value}${metric.unit}（${m + 1}/${last.day}）` : '';
+    return `<div class="card">
+      <div class="card-title">${metric.icon} ${escapeHtml(metric.title)}</div>
+      ${svg || '<div class="muted">この月はデータがありません</div>'}
+      ${lastText ? `<div class="muted">${escapeHtml(lastText)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div class="card">
+      <div class="card-title cal-nav">
+        <button id="prevMonth" class="btn-tiny">＜</button>
+        <span>${y}年${m + 1}月</span>
+        <button id="nextMonth" class="btn-tiny">＞</button>
+      </div>
+    </div>
+    ${cardsHtml}
+  `;
+
+  host.querySelector('#prevMonth').addEventListener('click', () => {
+    state.calendarMonth = new Date(y, m - 1, 1);
+    rerenderAll();
+  });
+  host.querySelector('#nextMonth').addEventListener('click', () => {
+    state.calendarMonth = new Date(y, m + 1, 1);
+    rerenderAll();
   });
 }
 
