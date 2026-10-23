@@ -504,7 +504,6 @@ function renderCatForm(host, existing, callbacks, onSaved, foods, recipes, onCan
     </div>
     <div class="field"><label>タブ背景色（猫の取り違え防止）</label>
       <input id="f_color" type="color" value="${isEdit && existing.color ? escapeHtml(existing.color) : '#ffd9a0'}">
-      <label><input id="f_colorNone" type="checkbox" ${isEdit && existing.color ? '' : 'checked'}> 色なし</label>
     </div>
     <div class="field"><label>メモ</label><textarea id="f_memo">${isEdit ? escapeHtml(existing.memo || '') : ''}</textarea></div>
     <div class="form-actions">
@@ -535,7 +534,7 @@ function renderCatForm(host, existing, callbacks, onSaved, foods, recipes, onCan
       birthDate: host.querySelector('#f_birth').value,
       sex: host.querySelector('#f_sex').value,
       favoriteSourceCodes,
-      color: host.querySelector('#f_colorNone').checked ? '' : host.querySelector('#f_color').value,
+      color: host.querySelector('#f_color').value,
       memo: host.querySelector('#f_memo').value,
       seq: isEdit ? existing.seq : Date.now()
     };
