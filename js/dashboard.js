@@ -421,6 +421,7 @@ async function renderCatMaster(content, callbacks) {
       <div class="kv">生年月日: ${escapeHtml(cat.birthDate || '-')}</div>
       <div class="kv">性別: ${escapeHtml(cat.sex || '-')}</div>
       <div class="kv">お気に入り餌・レシピ: ${favs.length ? escapeHtml(favs.map(sourceName).join('、')) : '-'}</div>
+      <div class="kv">タブ色: ${cat.color ? `<span style="display:inline-block;width:1em;height:1em;vertical-align:middle;border:1px solid #999;background:${escapeHtml(cat.color)}"></span>` : '-'}</div>
       <div class="kv">メモ: ${escapeHtml(cat.memo || '-')}</div>
       <div class="actions">
         <button class="btn-small icon-btn" data-edit-cat="${escapeHtml(cat.code)}" title="編集">✏️</button>
@@ -501,6 +502,10 @@ function renderCatForm(host, existing, callbacks, onSaved, foods, recipes, onCan
       <select id="f_fav2">${favOptionsHtml(existingFavs[1])}</select>
       <select id="f_fav3">${favOptionsHtml(existingFavs[2])}</select>
     </div>
+    <div class="field"><label>タブ背景色（猫の取り違え防止）</label>
+      <input id="f_color" type="color" value="${isEdit && existing.color ? escapeHtml(existing.color) : '#ffd9a0'}">
+      <label><input id="f_colorNone" type="checkbox" ${isEdit && existing.color ? '' : 'checked'}> 色なし</label>
+    </div>
     <div class="field"><label>メモ</label><textarea id="f_memo">${isEdit ? escapeHtml(existing.memo || '') : ''}</textarea></div>
     <div class="form-actions">
       <button id="f_save" class="btn-primary">${isEdit ? '更新' : '追加'}</button>
@@ -530,6 +535,7 @@ function renderCatForm(host, existing, callbacks, onSaved, foods, recipes, onCan
       birthDate: host.querySelector('#f_birth').value,
       sex: host.querySelector('#f_sex').value,
       favoriteSourceCodes,
+      color: host.querySelector('#f_colorNone').checked ? '' : host.querySelector('#f_color').value,
       memo: host.querySelector('#f_memo').value,
       seq: isEdit ? existing.seq : Date.now()
     };

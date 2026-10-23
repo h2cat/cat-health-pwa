@@ -483,3 +483,12 @@ tr.serve-row {
   padding: 6px 10px;
   margin-bottom: 10px;
 }
+
+/* 猫タブ別カラー */
+.tab-btn.has-color { background: color-mix(in srgb, var(--cat-color) 25%, white); }
+.tab-btn.has-color.active { background: color-mix(in srgb, var(--cat-color) 50%, white); color: #333; border-bottom-color: var(--cat-color); }
+
+/* 薬・サプリ複数選択 */
+.med-checks { display: flex; flex-direction: column; gap: 2px; max-height: 40vh; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 4px 8px; background: #fff; }
+.med-check { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+.med-check input { width: 20px; height: 20px; }

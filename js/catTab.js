@@ -551,9 +551,10 @@ async function renderMedicineSection(host, cat, state, refreshCalendar, rerender
             <option value="SUPPLEMENT">サプリ</option>
           </select>
         </div>
-        <div class="field"><label>サプリ・薬</label><select id="medSelect" class="required-input"></select></div>
-        <div class="field"><label id="medDoseLabel">用量</label><input id="medDose" type="number" step="0.01" value="${editingEntry && editingEntry.dose != null ? editingEntry.dose : ''}"></div>
-        <div class="field"><label>メモ</label><input id="medMemo" value="${editingEntry ? escapeHtml(editingEntry.memo || '') : ''}"></div>
+        ${editingEntry ? `<div class="field"><label>サプリ・薬</label><select id="medSelect" class="required-input"></select></div>
+        <div class="field"><label id="medDoseLabel">用量</label><input id="medDose" type="number" step="0.01" value="${editingEntry.dose != null ? editingEntry.dose : ''}"></div>
+        <div class="field"><label>メモ</label><input id="medMemo" value="${escapeHtml(editingEntry.memo || '')}"></div>`
+        : '<div class="field"><label>サプリ・薬（複数選択可。既定用量・メモなしで登録）</label><div id="medChecks" class="med-checks"></div></div>'}
         <button id="medSave" class="btn-primary">${editingEntry ? '更新' : '入力確定'}</button>
       </div>
     </div>
@@ -593,6 +594,24 @@ async function renderMedicineSection(host, cat, state, refreshCalendar, rerender
     if (m && m.defaultDose != null) doseInput.value = m.defaultDose;
     doseLabel.textContent = m ? `用量（${unitName(m.unitCode) || '単位未設定'}）` : '用量';
   }
+  // 新規入力: チェックボックスで複数選択（チェック数ぶんのレコードを既定用量で生成）
+  const medChecks = host.querySelector('#medChecks');
+  const checkedCodes = new Set();
+  function rebuildMedChecks() {
+    const filtered = getFilteredMedicines();
+    medChecks.innerHTML = filtered.length
+      ? filtered.map(m => `<label class="med-check"><input type="checkbox" value="${escapeHtml(m.code)}" ${checkedCodes.has(m.code) ? 'checked' : ''}> ${escapeHtml(m.name)}</label>`).join('')
+      : '<div class="muted">該当するサプリ・薬がありません</div>';
+    medChecks.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      if (cb.checked) checkedCodes.add(cb.value); else checkedCodes.delete(cb.value);
+    }));
+  }
+  if (medChecks) {
+    rebuildMedChecks();
+    medSearch.addEventListener('input', rebuildMedChecks);
+    filterKind.addEventListener('change', rebuildMedChecks);
+  }
+
   if (medSelect) {
     rebuildMedSelect(null);
     if (editingEntry && Array.from(medSelect.options).some(o => o.value === editingEntry.medicineCode)) {
@@ -630,6 +649,21 @@ async function renderMedicineSection(host, cat, state, refreshCalendar, rerender
 
   const saveBtn = host.querySelector('#medSave');
   if (saveBtn) saveBtn.addEventListener('click', async () => {
+    if (!editingEntry) {
+      // 新規: チェックした薬・サプリごとに1レコード（既定用量・メモなし）
+      if (checkedCodes.size === 0) { alert('サプリ・薬を選択してください'); return; }
+      const nDate = dateInput.value;
+      if (!nDate) { alert('日付を入力してください'); return; }
+      const nTime = nightChk.checked ? '99:00' : normalizeEntryTime(floorToTenMinutes(timeInput.value));
+      if (!nTime) { alert('時刻を入力してください'); return; }
+      for (const code of checkedCodes) {
+        const m = allMedicines.find(x => x.code === code);
+        await put('medicineLog', { catCode: cat.code, date: nDate, time: nTime, medicineCode: code, dose: m && m.defaultDose != null ? m.defaultDose : null, memo: '' });
+      }
+      renderMedicineSection(host, cat, state, refreshCalendar, rerenderAll);
+      if (refreshCalendar) refreshCalendar();
+      return;
+    }
     const medicineCode = medSelect.value;
     if (!medicineCode) { alert('サプリ・薬を選択してください'); return; }
     const entryDate = dateInput.value;

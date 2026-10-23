@@ -1,4 +1,4 @@
-import { openDB, getAll } from './db.js';
+import { openDB, getAll, get } from './db.js';
 import { renderDashboard } from './dashboard.js';
 import { renderCatTab } from './catTab.js';
 
@@ -46,7 +46,8 @@ async function renderTabBar() {
   const cats = await getAll('catMaster');
   let html = `<button class="tab-btn" data-tab="dashboard">設定</button>`;
   cats.forEach(cat => {
-    html += `<button class="tab-btn" data-tab="cat:${cat.code}">${escapeTab(cat.name)}</button>`;
+    const colorAttr = /^#[0-9a-fA-F]{6}$/.test(cat.color || '') ? ` has-color" style="--cat-color:${cat.color}` : '';
+    html += `<button class="tab-btn${colorAttr}" data-tab="cat:${cat.code}">${escapeTab(cat.name)}</button>`;
   });
   tabBar.innerHTML = html;
   tabBar.querySelectorAll('.tab-btn').forEach(btn => {
@@ -79,6 +80,14 @@ function markActive() {
 
 async function showTab(tab) {
   markActive();
+  // 猫タブごとの背景色（取り違え防止）
+  tabContent.style.background = '';
+  if (tab.startsWith('cat:')) {
+    const c = await get('catMaster', tab.slice(4));
+    if (c && /^#[0-9a-fA-F]{6}$/.test(c.color || '')) {
+      tabContent.style.background = `color-mix(in srgb, ${c.color} 22%, white)`;
+    }
+  }
   if (tab === 'dashboard') {
     await renderDashboard(tabContent, { onCatsChanged: renderTabBar });
   } else if (tab.startsWith('cat:')) {
