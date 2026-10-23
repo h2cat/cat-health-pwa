@@ -1053,7 +1053,12 @@ function buildTrendChartSvg(series, daysInMonth, opts) {
   });
   if (current.length) runs.push(current);
 
-  const polylines = runs.filter(r => r.length >= 2).map(r =>
+  // 記録の無い日をまたぐ区間は、薄い色の線でつなぐ（連続区間の線は濃いまま上に重ねる）
+  const gapLine = points.length >= 2
+    ? `<polyline points="${points.map(p => `${xFor(p.day).toFixed(1)},${yFor(p.value).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+    : '';
+
+  const polylines = gapLine + runs.filter(r => r.length >= 2).map(r =>
     `<polyline points="${r.map(p => `${xFor(p.day).toFixed(1)},${yFor(p.value).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
   ).join('');
 
